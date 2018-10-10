@@ -53,9 +53,8 @@ IDF (Inverse Document Frequency) — величина, обратная коли
 
 ## Деаномизация автора по лексике
 
-![Попался](/images/catched.png)  
-
-Можно использовать буфер обмена:
+Можно использовать буфер обмена:  
 `xclip -o | ./wordfreq-morph.py -m | ./wordfreq-tf-idf.py | ./wordfreq-search.py`  
 
-![Пример](/images/example2.png)  
+![Попался](/images/catched.png)  
+
