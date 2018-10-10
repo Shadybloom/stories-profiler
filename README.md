@@ -58,3 +58,4 @@ IDF (Inverse Document Frequency) — величина, обратная коли
 
 ![Попался](/images/catched.png)  
 
+![Попался x2](/images/example2.png)  
