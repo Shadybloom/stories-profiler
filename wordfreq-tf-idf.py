@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# На входе вывод wordfreq-morph.py (лучше с нормализацией, с ключом -m)
+
 # TF-IDF вычисляется для каждого слова по очень простой формуле TF x IDF, где:
 # TF (Term Frequency) — частота слова в тексте, я взял просто количество повторений.
 # IDF (Inverse Document Frequency) — величина, обратная количеству текстов, содержащих в себе это слово.
@@ -22,7 +24,8 @@ from math import log
 
 # Каталог словарей созданных wordfreq-morph.py
 WORDS_DIR = 'words'
-WORDFREQ_ALL = 'wordfreq-all.list'
+#WORDFREQ_ALL = 'wordfreq-all.list'
+WORDFREQ_ALL = 'wordfreq-50k.list'
 
 #-------------------------------------------------------------------------
 # Функции:
