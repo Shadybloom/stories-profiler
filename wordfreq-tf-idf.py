@@ -11,6 +11,7 @@
 
 
 import os
+import sys
 import collections
 import argparse
 import re
@@ -59,7 +60,8 @@ def find_path (file):
     if os.path.isfile(file):
         file_path = os.path.abspath(file)
     else:
-        print('Неправильное имя файла. Выход.')
+        print('Неправильное имя файла.', file)
+        print('Выход.')
         exit()
     return file_path
 
@@ -76,8 +78,22 @@ def dict_sort (stats):
 parser = create_parser()
 namespace = parser.parse_args()
 
+# Проверяем, существует ли указанный файл:
+file_patch = ' '.join(namespace.file)
+wordlist = []
+if namespace.file is not None and os.path.exists(file_patch):
+    wordfreq_file = find_path(namespace.file[0])
+    file = open(file_patch, "r")
+    for line in file:
+        wordlist.append(line)
+    file.close()
+# Если нет, читаем стандартный ввод:
+else:
+    wordfreq_file = None
+    for line in sys.stdin:
+        wordlist.append(line)
+
 wordfreq_all = find_path(WORDFREQ_ALL)
-wordfreq_file = find_path(namespace.file[0])
 
 # Создаём общий словарь:
 dict_wordfreq_all = {}
@@ -88,31 +104,31 @@ with open(wordfreq_all) as file:
         word = str(line.split()[2])
         fic = str(line.split()[3])
         dict_wordfreq_all[word] = [number, texts, fic]
+file.close()
 
 # Создаём словарь исследуемого текста:
-dict_wordfreq_file = {}
-with open(wordfreq_file) as file:
-    for line in file:
-        number = int(line.split()[0])
-        word = str(line.split()[1])
-        if word in dict_wordfreq_all:
-            number_all = dict_wordfreq_all[word][0]
-            texts = dict_wordfreq_all[word][1] + 1
-            fic = dict_wordfreq_all[word][2]
-        else:
-            number_all = number
-            texts = 1
-            fic = ''.join(re.findall('[^/]+$', str(wordfreq_file)))
-        texts_all = len(find_files(metadict_path(WORDS_DIR)))
-        word_idf = log(texts_all/texts)
-        # Число совпадение x редкость слова = значимость слова
-        # Числа с плавающей запятой превращаются в натуральные
-        word_tf_idf = number * int((word_idf * 1000) / 1000)
-        dict_wordfreq_file[word] = [word_tf_idf, number, texts, fic]
+dict_wordlist = {}
+for line in wordlist:
+    number = int(line.split()[0])
+    word = str(line.split()[1])
+    if word in dict_wordfreq_all:
+        number_all = dict_wordfreq_all[word][0]
+        texts = dict_wordfreq_all[word][1] + 1
+        fic = dict_wordfreq_all[word][2]
+    else:
+        number_all = number
+        texts = 1
+        fic = ''.join(re.findall('[^/]+$', str(wordfreq_file)))
+    texts_all = len(find_files(metadict_path(WORDS_DIR)))
+    word_idf = log(texts_all/texts)
+    # Число совпадение x редкость слова = значимость слова
+    # Числа с плавающей запятой превращаются в натуральные
+    word_tf_idf = number * int((word_idf * 1000) / 1000)
+    dict_wordlist[word] = [word_tf_idf, number, texts, fic]
 
 # Сортируем словарь:
-dict_wordfreq_file = dict_sort(dict_wordfreq_file)
+dict_wordlist = dict_sort(dict_wordlist)
 
-for word in dict_wordfreq_file:
-    list = dict_wordfreq_file[word]
+for word in dict_wordlist:
+    list = dict_wordlist[word]
     print(list[0], list[1], list[2], word, list[3])
