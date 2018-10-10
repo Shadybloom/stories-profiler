@@ -50,3 +50,12 @@ IDF (Inverse Document Frequency) — величина, обратная коли
 3) Число текстов с этим словом.  
 4) Само слово.  
 5) Рассказ, где слово встречается чаще всего.  
+
+## Деаномизация автора по лексике
+
+![Попался](/images/catched.png)  
+
+Можно использовать буфер обмена:
+`xclip -o | ./wordfreq-morph.py -m | ./wordfreq-tf-idf.py | ./wordfreq-search.py`  
+
+![Пример](/images/example2.png)  
