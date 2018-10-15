@@ -48,9 +48,13 @@ def create_parser():
                         action='store_true', default='False',
                         help='Слова в нормальную форму, в том числе неологизмы'
                         )
-    parser.add_argument('-p', '--phrase',
+    parser.add_argument('-p', '--phrases',
                         action='store_true', default='False',
                         help='Частота фраз (словосочетаний, разделённых пунктуацией)'
+                        )
+    parser.add_argument('-P', '--phrases_tokenize',
+                        action='store_true', default='False',
+                        help='Извлекает токены (пары неразделённых пунктуацией слов)'
                         )
     return parser
 
@@ -94,9 +98,28 @@ def split_to_phrases (text):
     phrases_clean = [ ]
     for element in phrases_raw:
         # Переводим в нижний регистр, чистим от пунктуации:
-        element = str(element.lower())
+        #element = str(element.lower())
         phrases_clean.append(' '.join(re.findall(r"(\w+)", element, re.UNICODE)))
     return phrases_clean
+
+def f_tokenizer (d_phrases, token_lenght=2):
+    """Разбивает словарь фраз на токены (пары слов)."""
+    stats = {}
+    for phrase in d_phrases:
+        phrase_list = phrase.split(" ")
+        token = [ ]
+        for word in phrase_list:
+            if len(token) < token_lenght:
+                token.append(word)
+            else:
+                token.append(word)
+                token.pop(0)
+                token_to_stats = ' '.join(token)
+                stats[token_to_stats] = stats.get(token_to_stats, 0) + 1
+    # Так-то стоило бы суммировать ключи и значения, а не просто заменить ключи.
+    # Или, лучше, добавить более длинные и более короткие чем токен фразы.
+    #stats.update(d_phrases)
+    return stats
 
 def wordfreq_old (words):
     """Создаёт словарь с частотой слов"""
@@ -149,7 +172,7 @@ def dict_sort (stats):
     stats_list = collections.OrderedDict(sorted(stats_sort.items(), key=lambda x: x[1], reverse=True))
     return stats_list
 
-def run (text, morph_soft=False, morph_forced=False, phrase=False):
+def run (text, morph_soft=False, morph_forced=False, phrases=False, phrases_tokenize=False):
     """Создаём словарь с частотой слов/фраз."""
     # Извлекаем из текста слова:
     words = split_to_words(text)
@@ -157,14 +180,17 @@ def run (text, morph_soft=False, morph_forced=False, phrase=False):
     database = sqlite3.connect(metadict_path(database_name))
     cursor = database.cursor()
     # Если указано преобразование слов:
-    if morph_soft is True and phrase is not True:
+    if morph_soft is True and phrases is not True:
         dict_wordfreq = wordfreq_morph(words, cursor, morph_forced)
-    elif morph_soft is not True and phrase is not True:
+    elif morph_soft is not True and phrases is not True:
         dict_wordfreq = wordfreq_old(words)
-    elif phrase is True:
+    elif phrases is True:
         dict_wordfreq = wordfreq_old(split_to_phrases(text))
+        if phrases_tokenize is True:
+            dict_wordfreq.update(f_tokenizer(split_to_phrases(text), token_lenght=2))
+            dict_wordfreq.update(f_tokenizer(split_to_phrases(text), token_lenght=3))
     else:
-        print('nya',morph_soft,phrase)
+        print('nya',morph_soft,phrases)
         dict_wordfreq = wordfreq_old(words)
     # Отключаемся от базы данных:
     database.close()
@@ -187,7 +213,8 @@ if __name__ == '__main__':
     else:
         text = sys.stdin.read()
     # Исполняется главная функция, создаётся словарь:
-    dict_wordfreq = run(text, namespace.morph_soft, namespace.morph_forced, namespace.phrase)
+    dict_wordfreq = run(text, namespace.morph_soft, namespace.morph_forced,
+            namespace.phrases, namespace.phrases_tokenize)
     # Сортировка словаря:
     dict_wordfreq = dict_sort(dict_wordfreq)
     # Вывод словаря:
