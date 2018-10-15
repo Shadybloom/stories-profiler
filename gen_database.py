@@ -24,18 +24,18 @@ BOOKS_DIR = 'fb2'
 DATABASE_PATH = 'database/stories.sqlite'
 # Нормализация слов с помощью pymorphy:
 MORPHY_SOFT = True
-MORPHY_FORCED = True
+MORPHY_FORCED = False
 # Хранить текст не обязательно, достаточно списков:
 SAVE_BOOK_TEXT = False
 # Разбиваем фразы на токены (группы из 2-3 слов)
 PHRASES_TOKENIZE = True
 # Минимальное число совпадений фразы для выборки в словарь:
 PHRASEFREQ_MIN = 2
-# С каждым новым текстом в бд таблица всё равно пересоздаётся:
-regen_words_table = False
 # Минимальные и максимальные значения tf-idf для построения облака ссылок:
 SCORE_MIN = 5
 SCORE_MAX = 5000
+# С каждым новым текстом в бд таблица всё равно пересоздаётся:
+regen_words_table = False
 
 #-------------------------------------------------------------------------
 # Функции:
@@ -46,6 +46,22 @@ def create_parser():
     parser.add_argument('file',
                         nargs='*',
                         help='Файлы в формате fb2'
+                        )
+    parser.add_argument('-s', '--search',
+                        action='store', dest='search_string', type=str, nargs='*', default='',
+                        help='Поиск в базе данных'
+                        )
+    parser.add_argument('-S', '--score',
+                        action='store', dest='output_max', type=int, default=20,
+                        help='Число строк в выводе.'
+                        )
+    parser.add_argument('-l', '--links',
+                        action='store_true', default='False',
+                        help='Вывод таблицы схожих текстов'
+                        )
+    parser.add_argument('-o', '--output',
+                        action='store_true', default='False',
+                        help='Вывод таблицы ключевых слов'
                         )
     return parser
 
@@ -388,7 +404,6 @@ def filename_in_database (file_path, database_path=DATABASE_PATH):
     return filename_test
 
 def fill_words_dict(words_all_dict, story_wordfreq_dict, story_tuple, count):
-    # Исправить, отдельно phrases_dict считай! wordcount же, а тебе нужно phrasecount.
     """Общий словарь заполняется словами из словарей рассказов.
 
     Если слово уже есть, частота суммируется, а к числу совпадений добавляется единица.
@@ -433,6 +448,8 @@ def gen_words_table(database_path):
             "SELECT filename,book_title,author,\
             wordcount,phrasecount,wordfreq,phrasefreq FROM stories"
             ).fetchall()
+    # Исправить.
+    # Вовсе не обязательно сносить таблицы, можно ведь обновить!
     create_words_table(database_path)
     create_phrases_table(database_path)
     print('Создан и заполняется текстовый корпус:')
@@ -443,7 +460,10 @@ def gen_words_table(database_path):
         phrasecount = story_tuple[4]
         story_wordfreq_dict = pickle.loads(story_tuple[5])
         story_phrasefreq_dict = pickle.loads(story_tuple[6])
-        # По очереди перебираем слова из списка рассказа:
+        # Исправить.
+        # Данные можно записывать после каждой обработки словаря.
+        # Да бесполезно, всё равно словарь в памяти приходится держать.
+        # По очереди перебираем слова из списка рассказа, обновляем объединённый словарь:
         fill_words_dict(words_all_dict, story_wordfreq_dict, story_tuple, wordcount)
         fill_words_dict(phrases_all_dict, story_phrasefreq_dict, story_tuple, phrasecount)
     for word,data in words_all_dict.items():
@@ -472,7 +492,7 @@ def gen_words_table(database_path):
     database.close()
 
 def storycount(database_path):
-    """Выводит словарь слов и числа документов, где это слово есть."""
+    """Создаёт словарь соотвествий слово/фраза -- число докуметнов, где искомое есть."""
     database = sqlite3.connect(metadict_path(database_path))
     cursor = database.cursor()
     storycount_dict = {}
@@ -484,6 +504,20 @@ def storycount(database_path):
     for word in words_list:
         storycount_dict[word[0]] = word[1]
     return storycount_dict
+
+def gen_authors_dict(database_path):
+    """Создаёт словарь соответствий слово/фраза -- файл, автор, история."""
+    database = sqlite3.connect(metadict_path(database_path))
+    cursor = database.cursor()
+    authors_dict = {}
+    words_list = cursor.execute("SELECT word,top_filename,top_story,top_author FROM words").fetchall()
+    phrases_list = cursor.execute("SELECT phrase,top_filename,top_story,top_author FROM phrases").fetchall()
+    # Сначала фразы, потом слова:
+    for phrase in phrases_list:
+        authors_dict[phrase[0]] = phrase[1:5]
+    for word in words_list:
+        authors_dict[word[0]] = word[1:5]
+    return authors_dict
 
 def gen_wordfreq_idf(database_path):
     """Функция вычисляет параметры TF-IDF для слов каждого текста в базе данных.
@@ -606,6 +640,72 @@ def select_file(file_path):
         file.close()
         book_to_database(DATABASE_PATH, file_path, txt_to_dict(text))
 
+def read_links(database_path, search_string='', output_max=20):
+    """Вывод схожих рассказов таблицей."""
+    database = sqlite3.connect(metadict_path(database_path))
+    cursor = database.cursor()
+    search_string = ' '.join(search_string)
+    search_string = '%' + search_string + '%'
+    sql_list = cursor.execute(
+            "SELECT filename,links FROM stories WHERE filename LIKE ?\
+                    OR author LIKE ? OR book_title LIKE ?", [\
+            search_string,\
+            search_string,\
+            search_string,\
+            ]).fetchall()
+    for n,sql_tuple in enumerate(sql_list,1):
+        print('# ----------------------------------------------------------------------------')
+        print('# ', n, '/', len(sql_list), sql_tuple[0])
+        print('# ----------------------------------------------------------------------------')
+        cloud = pickle.loads(sql_tuple[1])
+        cloud = dict_sort(cloud)
+        n = 0
+        for name, value in cloud.items():
+            book_data = cursor.execute("SELECT book_title,author\
+                    FROM stories WHERE filename=? COLLATE NOCASE"\
+                    ,(name,)).fetchone()
+            book = book_data[0]
+            author = book_data[1]
+            if book == 'None':
+                book = name
+            # Вывод в процентах:
+            value = round(value * 100, 5)
+            if value > 0.1 and n < output_max:
+                n = n + 1
+                print ('{0:2} {1:10} | {3:30} | {2}'.format(n, round(value, 3),
+                    book, author))
+                #print(value, book_data[0],book_data[1])
+
+def read_blobs(database_path, search_string='', output_max=20):
+    """Вывод ключевых слов таблицей."""
+    database = sqlite3.connect(metadict_path(database_path))
+    cursor = database.cursor()
+    search_string = ' '.join(search_string)
+    search_string = '%' + search_string + '%'
+    sql_list = cursor.execute(
+            "SELECT filename,tf_idf FROM stories WHERE filename LIKE ?\
+                    OR author LIKE ? OR book_title LIKE ? COLLATE NOCASE", [\
+            search_string,\
+            search_string,\
+            search_string,\
+            ]).fetchall()
+    # Исправить. Очень тормозная фигня, лучше filename прямо в облако ссылок прописать.
+    authors_dict = gen_authors_dict(database_path)
+    for n,sql_tuple in enumerate(sql_list,1):
+        print('# ----------------------------------------------------------------------------')
+        print('# ', n, '/', len(sql_list), sql_tuple[0])
+        print('# ----------------------------------------------------------------------------')
+        cloud = pickle.loads(sql_tuple[1])
+        cloud = dict_sort(cloud)
+        n = 0
+        for word, value in cloud.items():
+            if n < output_max:
+                n = n + 1
+                print ('{0:3} {1:10} | {2:30} | {3}'.format(n, round(value),
+                    word, authors_dict.get(word)[2]))
+            else:
+                break
+
 #-------------------------------------------------------------------------
 # Тело программы:
 
@@ -635,31 +735,8 @@ if __name__ == '__main__':
         gen_words_table(DATABASE_PATH)
         gen_wordfreq_idf(DATABASE_PATH)
         gen_links(DATABASE_PATH)
-
-# ----
-# Тестируем:
-
-def read_links(database_path):
-    database = sqlite3.connect(metadict_path(database_path))
-    cursor = database.cursor()
-    sql_list = cursor.execute(
-            "SELECT filename,links FROM stories"
-            ).fetchall()
-    for n,sql_tuple in enumerate(sql_list,1):
-        print('# ----------------------------------------------------------------------------')
-        print('# ', n, '/', len(sql_list), sql_tuple[0])
-        print('# ----------------------------------------------------------------------------')
-        cloud = pickle.loads(sql_tuple[1])
-        cloud = dict_sort(cloud)
-        n = 0
-        for name, value in cloud.items():
-            book_data = cursor.execute("SELECT book_title,author FROM stories WHERE filename=?"\
-                    ,(name,)).fetchone()
-            value = round(value * 100, 5)
-            if value > 0.3:
-                n = n + 1
-                print ('{0:2} {1:10} | {3:30} | {2}'.format(n, round(value, 3),
-                    book_data[0], book_data[1]))
-                #print(value, book_data[0],book_data[1])
-
-read_links(DATABASE_PATH)
+    # Вывод данных:
+    if namespace.output is True:
+        read_blobs(DATABASE_PATH, namespace.search_string, namespace.output_max)
+    elif namespace.links is True:
+        read_links(DATABASE_PATH, namespace.search_string, namespace.output_max)
