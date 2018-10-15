@@ -168,13 +168,14 @@ def fb2_to_dict (file_path):
     # Из-за проблем с кодировкой часто бывают ошибки.
     # Надо бы найти годный декодер, а пока try.
     try:
-        tree = etree.parse(file_path)
-        #root = tree.getroot()
         fb2_dict = {}
-        #fb2_dict['author'] = ' '.join(wordfreq_morph.split_to_words(
-        #        ''.join(tree.find(".//{*}author").xpath(".//text()"))))
-        fb2_dict['author'] = clean_text(''.join(tree.find(".//{*}author").xpath(".//text()")))
-        fb2_dict['book_title'] = clean_text(''.join(tree.find(".//{*}book-title").xpath(".//text()")))
+        tree = etree.parse(file_path)
+        # Удаляем загрязняющий вывод id автора:
+        author_id = tree.find(".//{*}author/{*}id")
+        if author_id is not None:
+            author_id.getparent().remove(author_id)
+        fb2_dict['author'] = clean_text(' '.join(tree.find(".//{*}author").xpath(".//text()")))
+        fb2_dict['book_title'] = clean_text(' '.join(tree.find(".//{*}book-title").xpath(".//text()")))
         fb2_dict['date_added'] = extract_date_fb2(tree)
         #print(fb2_dict['author'], fb2_dict['book_title'],fb2_dict['date_added'])
         fb2_dict['annotation'] = ' '.join(tree.find(".//{*}annotation").xpath(".//text()"))
