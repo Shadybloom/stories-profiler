@@ -145,13 +145,6 @@ def cut_phrasedict (story_phrasefreq_dict, phrasefreq_min=PHRASEFREQ_MIN):
             phrasefreq_dict_clean[phrase] = value
     return phrasefreq_dict_clean
 
-def phrasecounter (story_phrasefreq_dict):
-    """Считаем число фраз по частотному словарю."""
-    phrasecount = 0
-    for phrase,value in story_phrasefreq_dict.items():
-        phrasecount = phrasecount + value
-    return phrasecount
-
 def dict_sort (stats):
     """Сортировка словаря по частоте и алфавиту"""
     stats_sort = collections.OrderedDict(sorted(stats.items(), key=lambda x: x[0], reverse=False))
@@ -192,7 +185,7 @@ def fb2_to_dict (file_path):
         fb2_dict['wordcount'] = len(wordfreq_morph.split_to_words( \
                 fb2_dict['body_text']))
         # Почини. Функцию сделай:
-        fb2_dict['phrasecount'] = phrasecounter(fb2_dict['phrasefreq'])
+        fb2_dict['phrasecount'] = sum(fb2_dict['phrasefreq'].values())
         fb2_dict['wordfreq_count'] = len(fb2_dict['wordfreq'])
         fb2_dict['phrasefreq_count'] = len(fb2_dict['phrasefreq'])
         #print(fb2_dict['wordcount'], fb2_dict['wordfreq_count'],fb2_dict['phrasefreq_count'])
