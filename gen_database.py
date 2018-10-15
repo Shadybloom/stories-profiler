@@ -14,28 +14,9 @@ import collections
 from math import log
 from lxml import etree
 from itertools import groupby
-# Функции из соседнего скрипта:
+# Функции из соседних скриптов:
 import wordfreq_morph
-
-#-------------------------------------------------------------------------
-# Опции:
-
-BOOKS_DIR = 'fb2'
-DATABASE_PATH = 'database/stories.sqlite'
-# Нормализация слов с помощью pymorphy:
-MORPHY_SOFT = True
-MORPHY_FORCED = False
-# Хранить текст не обязательно, достаточно списков:
-SAVE_BOOK_TEXT = False
-# Разбиваем фразы на токены (группы из 2-3 слов)
-PHRASES_TOKENIZE = True
-# Минимальное число совпадений фразы для выборки в словарь:
-PHRASEFREQ_MIN = 2
-# Минимальные и максимальные значения tf-idf для построения облака ссылок:
-SCORE_MIN = 5
-SCORE_MAX = 5000
-# С каждым новым текстом в бд таблица всё равно пересоздаётся:
-regen_words_table = False
+from profiler_config import *
 
 #-------------------------------------------------------------------------
 # Функции:
@@ -137,7 +118,7 @@ def clean_text (raw_text):
     #cleant_text = cleant_text.lower()
     return cleant_text
 
-def cut_phrasedict (story_phrasefreq_dict, phrasefreq_min=PHRASEFREQ_MIN):
+def cut_phrasedict (story_phrasefreq_dict, phrasefreq_min):
     """Фильтруем фразы по минимальному числу совпадений."""
     phrasefreq_dict_clean = { }
     for phrase,value in story_phrasefreq_dict.items():
@@ -388,7 +369,7 @@ def book_to_database (database_path, file_path, fb2_dict):
     database.commit()
     database.close()
 
-def filename_in_database (file_path, database_path=DATABASE_PATH):
+def filename_in_database (file_path, database_path):
     """Проверка, есть ли название в базе данных."""
     database = sqlite3.connect(metadict_path(database_path))
     filename = os.path.basename(file_path)
@@ -702,6 +683,7 @@ def read_blobs(database_path, search_string='', output_max=20):
 
 #-------------------------------------------------------------------------
 # Тело программы:
+
 
 if __name__ == '__main__':
     # Создаётся список аргументов скрипта:
