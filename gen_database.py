@@ -4,8 +4,8 @@
 # Извлекаем текст, название и автора из fb2, fb2.zip и txt, переносим в базу данных.
 # Создаём таблицы частоты слов (с нормализацией) и фраз (разделённых знаками препинания).
 
-import os
 import re
+import os
 import argparse
 import zipfile
 import sqlite3
@@ -17,6 +17,10 @@ from itertools import groupby
 # Функции из соседних скриптов:
 import wordfreq_morph
 from profiler_config import *
+
+# Исправить. Таймер для тестов, не забудь убрать:
+import datetime
+import sys
 
 #-------------------------------------------------------------------------
 # Функции:
@@ -33,7 +37,7 @@ def create_parser():
                         help='Поиск в базе данных'
                         )
     parser.add_argument('-S', '--score',
-                        action='store', dest='output_max', type=int, default=20,
+                        action='store', dest='output_max', type=int, default=OUTPUT_LINES,
                         help='Число строк в выводе.'
                         )
     parser.add_argument('-l', '--links',
@@ -378,14 +382,14 @@ def filename_in_database (file_path, database_path):
             ,(filename,)).fetchall()
     return filename_test
 
-def fill_words_dict(words_all_dict, story_wordfreq_dict, story_tuple, count):
+def fill_words_dict(words_all_dict, story_wordfreq_dict, storytuple, count):
     """Общий словарь заполняется словами из словарей рассказов.
 
     Если слово уже есть, частота суммируется, а к числу совпадений добавляется единица.
     Если в новом рассказе слово встречается чаще, тогда этот рассказ ассоциируется со словом.
     Частота слова в процентах от текста рассказа.
     """
-    filename, book_title, author = story_tuple[0:3]
+    filename, book_title, author = storytuple[0:3]
     wordcount = count
     for word, wordfreq in story_wordfreq_dict.items():
         # Если слова нет в общем списке, создаём:
@@ -411,91 +415,109 @@ def fill_words_dict(words_all_dict, story_wordfreq_dict, story_tuple, count):
 
 def gen_words_table(database_path):
     """Создаём текстовый корпус. Самые распространённые слова в текстах."""
+    # Исправить. Проверить.
     # Алгоритм шустрый, но жрёт память как свинья. Весь словарь в RAM.
     # Поразмысли, может, лучше в первый цикл засунуть не рассказы, а слова.
-    # И записывать значения в таблицу после обработки каждого слова.
-    # Но тогда получается слишком много обращений к бд.
+        # И записывать значения в таблицу после обработки каждого слова.
+        # Но тогда получается слишком много обращений к бд.
+    # Мысль, может подряд всё записывать, а потом почистить таблицу от одинаковых слов/фраз?
+        # То есть создать новую таблицу, где всё будет чисто и аккуратно.
+        # Получается одно обращение на каждый элемент, хотя и с поиском.
+        # Кстати, таким манером можно создать единую таблицу TF-IDF для всех рассказов, теги же.
+        # Это выглядит как отличная идея. Обязательно испытай!
     words_all_dict = {}
     phrases_all_dict = {}
     database = sqlite3.connect(metadict_path(database_path))
     cursor = database.cursor()
-    stories_list = cursor.execute(
-            "SELECT filename,book_title,author,\
-            wordcount,phrasecount,wordfreq,phrasefreq FROM stories"
-            ).fetchall()
+    # В этом месте мы загружаем список с id и названиями, а дальше перебираем по id:
+    stories_list = cursor.execute("SELECT id, filename FROM stories").fetchall()
     # Исправить.
     # Вовсе не обязательно сносить таблицы, можно ведь обновить!
     create_words_table(database_path)
     create_phrases_table(database_path)
-    print('Создан и заполняется текстовый корпус:')
-    for n,story_tuple in enumerate(stories_list,1):
-        print(n, '/', len(stories_list), story_tuple[0])
-        # Берём переменные из базы данных:
-        wordcount = story_tuple[3]
-        phrasecount = story_tuple[4]
-        story_wordfreq_dict = pickle.loads(story_tuple[5])
-        story_phrasefreq_dict = pickle.loads(story_tuple[6])
+    for nametuple in stories_list:
+        story_id, filename = nametuple
+        # Миллионы, миллионы ключей!
+        keys_test = len(words_all_dict) + len(phrases_all_dict)
+        ram_test = (int(sys.getsizeof(words_all_dict)) + int(sys.getsizeof(phrases_all_dict))) /1024 /1024
+        # Бесполезное украшательство такое бесполезное (зато проблемный словарь на виду):
+        print('{0} / {1} {2:60} | {3:10} KEYS: {4:4} Mb'.format(
+            story_id, len(stories_list), nametuple[1], keys_test, round(ram_test)
+            ))
+        #print(story_id, '/', len(stories_list), filename)
+        # Берём кортеж из базы данных:
+        storytuple = cursor.execute("SELECT filename, book_title, author,\
+                wordcount, phrasecount, wordfreq, phrasefreq\
+                FROM stories WHERE id=?"\
+                ,(story_id,)).fetchone()
+        #print(storytuple[0:5])
+        wordcount = storytuple[3]
+        phrasecount = storytuple[4]
+        story_wordfreq_dict = pickle.loads(storytuple[5])
+        story_phrasefreq_dict = pickle.loads(storytuple[6])
         # Исправить.
         # Данные можно записывать после каждой обработки словаря.
         # Да бесполезно, всё равно словарь в памяти приходится держать.
         # По очереди перебираем слова из списка рассказа, обновляем объединённый словарь:
-        fill_words_dict(words_all_dict, story_wordfreq_dict, story_tuple, wordcount)
-        fill_words_dict(phrases_all_dict, story_phrasefreq_dict, story_tuple, phrasecount)
+        fill_words_dict(words_all_dict, story_wordfreq_dict, storytuple, wordcount)
+        fill_words_dict(phrases_all_dict, story_phrasefreq_dict, storytuple, phrasecount)
     for word,data in words_all_dict.items():
+        # Можно резко сократить размер словаря, если вместо имён/названий вставлять id рассказа.
+        # Нифига подобного. Словари -- умные штуки, одну запись по 100500 раз не дублируют.
         #print(data,word)
+        wordcount, storycount, word_percent, top_filename, top_story, top_author = data
         cursor.execute("INSERT INTO words VALUES(NULL,?,?,?,?,?,?,?)", [\
             word,\
-            data[0],\
-            data[1],\
-            data[2],\
-            data[3],\
-            data[4],\
-            data[5],\
+            wordcount,\
+            storycount,\
+            word_percent,\
+            top_filename,\
+            top_story,\
+            top_author,\
         ])
     for phrase,data in phrases_all_dict.items():
         #print(data,phrase)
+        phrasecount, storycount, phrase_percent, top_filename, top_story, top_author = data
         cursor.execute("INSERT INTO phrases VALUES(NULL,?,?,?,?,?,?,?)", [\
             phrase,\
-            data[0],\
-            data[1],\
-            data[2],\
-            data[3],\
-            data[4],\
-            data[5],\
+            phrasecount,\
+            storycount,\
+            phrase_percent,\
+            top_filename,\
+            top_story,\
+            top_author,\
         ])
     database.commit()
     database.close()
+    print("[OK] CREATE words/phrases tables",database_path)
 
-def storycount(database_path):
-    """Создаёт словарь соотвествий слово/фраза -- число докуметнов, где искомое есть."""
+def gen_tokens_dict(database_path):
+    """Создаёт словарь соответствий: слово -- число текстов с ним, ключевой текст"""
     database = sqlite3.connect(metadict_path(database_path))
     cursor = database.cursor()
-    storycount_dict = {}
-    words_list = cursor.execute("SELECT word,storycount FROM words").fetchall()
-    phrases_list = cursor.execute("SELECT phrase,storycount FROM phrases").fetchall()
-    # Сначала фразы, потом слова:
-    for phrase in phrases_list:
-        storycount_dict[phrase[0]] = phrase[1]
-    for word in words_list:
-        storycount_dict[word[0]] = word[1]
-    return storycount_dict
+    tokens_dict = {}
+    words_list = cursor.execute(
+            "SELECT word, storycount, top_filename FROM words"
+            ).fetchall()
+    phrases_list = cursor.execute(
+            "SELECT phrase, storycount, top_filename FROM phrases"
+            ).fetchall()
+    # Сначала фразы, затем слова:
+    for i in phrases_list:
+        tokens_dict[i[0]] = i[1:3]
+    for i in words_list:
+        tokens_dict[i[0]] = i[1:3]
+    # Сохраняем словарь рядом с базой данных, пригодится:
+    with open(metadict_path(TOKENS_DICT), "wb") as output_file:
+        pickle.dump(tokens_dict, output_file)
+        output_file.close
+        print("[OK] CREATE",TOKENS_DICT)
+    #for el,val in tokens_dict.items():
+    #    print(val, el)
+    return tokens_dict
 
-def gen_authors_dict(database_path):
-    """Создаёт словарь соответствий слово/фраза -- файл, автор, история."""
-    database = sqlite3.connect(metadict_path(database_path))
-    cursor = database.cursor()
-    authors_dict = {}
-    words_list = cursor.execute("SELECT word,top_filename,top_story,top_author FROM words").fetchall()
-    phrases_list = cursor.execute("SELECT phrase,top_filename,top_story,top_author FROM phrases").fetchall()
-    # Сначала фразы, потом слова:
-    for phrase in phrases_list:
-        authors_dict[phrase[0]] = phrase[1:5]
-    for word in words_list:
-        authors_dict[word[0]] = word[1:5]
-    return authors_dict
-
-def gen_wordfreq_idf(database_path):
-    """Функция вычисляет параметры TF-IDF для слов каждого текста в базе данных.
+def tf_idf(wordfreq_dict, cursor, tokens_dict=TOKENS_DICT):
+    """Функция вычисляет рейтинг TF-IDF для каждого слова в словаре.
 
     TF-IDF вычисляется для каждого слова по очень простой формуле TF x IDF, где:
     TF (Term Frequency) -- частота слова в тексте, количество повторений.
@@ -509,35 +531,50 @@ def gen_wordfreq_idf(database_path):
     N -- общее кол-во текстов в выборке,
     n -- кол-во текстов, в которых есть это слово.
     """
+    score_dict = {}
+    storycount_all = cursor.execute("SELECT count(id) FROM stories").fetchone()[0]
+    # Довольно большой словарь, лучше загрузить, чем пересоздавать:
+    if type(tokens_dict) is not dict:
+        with open(metadict_path(tokens_dict), "rb") as pickle_dict:
+            tokens_dict = pickle.load(pickle_dict)
+        pickle_dict.closed
+    # Перебор слов, вычисление рейтинга:
+    for word, wordfreq in wordfreq_dict.items():
+        if word in tokens_dict:
+            word_score = wordfreq * log(storycount_all / tokens_dict[word][0])
+            score_dict[word] = word_score
+    # Тесты:
+    #score_dict = dict_sort(score_dict)
+    #for el, value in score_dict.items():
+    #    if value > 5:
+    #        print(value, el)
+    return score_dict
+
+def gen_wordfreq_idf(database_path, tokens_dict=TOKENS_DICT):
+    """Функция вычисляет параметры TF-IDF для слов каждого текста в базе данных."""
     database = sqlite3.connect(metadict_path(database_path))
     cursor = database.cursor()
-    storycount_dict = storycount(database_path)
-    storycount_all = len(cursor.execute("SELECT filename FROM stories").fetchall())
-    filenames_list = cursor.execute(
-            "SELECT filename,wordfreq,phrasefreq FROM stories"
-            ).fetchall()
-    print('Создаются частотные словари TF-IDF:')
+    if type(tokens_dict) is not dict:
+        with open(metadict_path(tokens_dict), "rb") as pickle_dict:
+            tokens_dict = pickle.load(pickle_dict)
+        pickle_dict.closed
+    #tokens_dict = gen_tokens_dict(database_path)
+    stories_list = cursor.execute("SELECT id, filename FROM stories").fetchall()
     # По очереди перебираем рассказы и создаём словари TF-IDF
-    for n,story_tuple in enumerate(filenames_list,1):
-        print(n, '/', len(filenames_list), story_tuple[0])
-        score_dict = {}
-        filename = story_tuple[0]
-        story_wordfreq_dict = pickle.loads(story_tuple[1])
-        story_phrasefreq_dict = pickle.loads(story_tuple[2])
+    for nametuple in stories_list:
+        story_id, filename = nametuple
+        print(story_id, '/', len(stories_list), filename)
+        # Берём кортеж из базы данных:
+        storytuple = cursor.execute("SELECT wordfreq, phrasefreq FROM stories WHERE id=?"\
+                ,(story_id,)).fetchone()
+        story_wordfreq_dict = pickle.loads(storytuple[0])
+        story_phrasefreq_dict = pickle.loads(storytuple[1])
         # Перебираем слова в тексте. Если находим, вычисляем TF-IDF:
-        for word,wordfreq in story_wordfreq_dict.items():
-            word_score = wordfreq * log(storycount_all/storycount_dict[word])
-            if word in storycount_dict:
-                score_dict[word] = word_score
-        for phrase,phrasefreq in story_phrasefreq_dict.items():
-            phrase_score = phrasefreq * log(storycount_all/storycount_dict[phrase])
-            if phrase in storycount_dict:
-                score_dict[phrase] = phrase_score
-        # Тесты:
-        #score_dict = dict_sort(score_dict)
-        #for el, value in score_dict.items():
-        #    if value > 5:
-        #        print(value, el)
+        wordscore_dict = tf_idf(story_wordfreq_dict, cursor, tokens_dict)
+        phrasescore_dict = tf_idf(story_phrasefreq_dict, cursor, tokens_dict)
+        # Обновляем словарь фраз словарём слов:
+        phrasescore_dict.update(wordscore_dict)
+        score_dict = phrasescore_dict
         score_dict = pickle.dumps(score_dict)
         cursor.execute("UPDATE stories SET tf_idf=? WHERE filename=?", [\
             score_dict,\
@@ -545,50 +582,44 @@ def gen_wordfreq_idf(database_path):
             ])
         database.commit()
     database.close()
+    print("[OK] CREATE tf_idf",database_path)
 
-def words_to_dict(database_path):
-    """Создаёт словарь соответствий: слово/фраза -- рассказ."""
-    words_dict = { }
+def create_linkscloud(local_dict, tokens_dict, score_min=SCORE_MIN, score_max=SCORE_MAX):
+    dict_links = {}
+    scorecount = sum(local_dict.values())
+    for token, score in local_dict.items():
+        # Чувствительность настраивается по абсолютным показателям:
+        if score >= score_min and score < score_max:
+            # А резльтаты, для удобства, в относительных:
+            percent_score = score / scorecount
+            if token in tokens_dict:
+                #print(token, tokens_dict[token])
+                # Находим название и делаем ключом словаря:
+                top_filename = tokens_dict[token][1]
+                if top_filename not in dict_links:
+                    dict_links[top_filename] = percent_score
+                else:
+                    dict_links[top_filename] += percent_score
+    return dict_links
+
+def gen_links(database_path, tokens_dict=TOKENS_DICT):
     database = sqlite3.connect(metadict_path(database_path))
     cursor = database.cursor()
-    words_list = cursor.execute(
-            "SELECT word,top_filename FROM words"
-            ).fetchall()
-    phrases_list = cursor.execute(
-            "SELECT phrase,top_filename FROM phrases"
-            ).fetchall()
-    words_list.extend(phrases_list)
-    for wordtuple in words_list:
-        words_dict[wordtuple[0]] = wordtuple[1]
-    return words_dict
-
-def gen_links(database_path):
-    database = sqlite3.connect(metadict_path(database_path))
-    cursor = database.cursor()
-    tokens_list = cursor.execute(
-            "SELECT filename,tf_idf FROM stories"
-            ).fetchall()
-    words_dict = words_to_dict(database_path)
-    print('Создаются облака ссылок:')
-    for n,tokens_tuple in enumerate(tokens_list,1):
-        print(n, '/', len(tokens_list), tokens_tuple[0])
-        filename = tokens_tuple[0]
-        dict_links = {}
-        scorecount = 0
-        tokens_dict = pickle.loads(tokens_tuple[1])
-        scorecount = sum(tokens_dict.values())
-        for token,score in tokens_dict.items():
-            # Чувствительность настраивается по абсолютому счёту:
-            if score >= SCORE_MIN and score < SCORE_MAX:
-                percent_score = score / scorecount
-                if token in words_dict:
-                    #print(token, words_dict[token])
-                    # Находим название и делаем ключом словаря:
-                    top_filename = words_dict[token]
-                    if words_dict[token] not in dict_links:
-                        dict_links[top_filename] = percent_score
-                    else:
-                        dict_links[top_filename] = dict_links[top_filename] + percent_score
+    stories_list = cursor.execute("SELECT id, filename FROM stories").fetchall()
+    storycount_all = len(stories_list)
+    #tokens_dict = gen_tokens_dict(database_path)
+    if type(tokens_dict) is not dict:
+        with open(metadict_path(tokens_dict), "rb") as pickle_dict:
+            tokens_dict = pickle.load(pickle_dict)
+        pickle_dict.closed
+    # По очереди перебираем рассказы и создаём словари TF-IDF
+    for nametuple in stories_list:
+        story_id, filename = nametuple
+        print(story_id, '/', len(stories_list), filename)
+        tokens_tuple = cursor.execute("SELECT tf_idf FROM stories WHERE id=?"\
+                ,(story_id,)).fetchone()
+        local_dict = pickle.loads(tokens_tuple[0])
+        dict_links = create_linkscloud(local_dict, tokens_dict)
         dict_links = pickle.dumps(dict_links)
         cursor.execute("UPDATE stories SET links=? WHERE filename=?", [\
             dict_links,\
@@ -596,6 +627,7 @@ def gen_links(database_path):
             ])
         database.commit()
     database.close()
+    print("[OK] CREATE links",database_path)
 
 def select_file(file_path):
     """Определяем тип файла, конвертируем и переносим в базу данных.
@@ -614,72 +646,6 @@ def select_file(file_path):
         text = file.read()
         file.close()
         book_to_database(DATABASE_PATH, file_path, txt_to_dict(text))
-
-def read_links(database_path, search_string='', output_max=20):
-    """Вывод схожих рассказов таблицей."""
-    database = sqlite3.connect(metadict_path(database_path))
-    cursor = database.cursor()
-    search_string = ' '.join(search_string)
-    search_string = '%' + search_string + '%'
-    sql_list = cursor.execute(
-            "SELECT filename,links FROM stories WHERE filename LIKE ?\
-                    OR author LIKE ? OR book_title LIKE ?", [\
-            search_string,\
-            search_string,\
-            search_string,\
-            ]).fetchall()
-    for n,sql_tuple in enumerate(sql_list,1):
-        print('# ----------------------------------------------------------------------------')
-        print('# ', n, '/', len(sql_list), sql_tuple[0])
-        print('# ----------------------------------------------------------------------------')
-        cloud = pickle.loads(sql_tuple[1])
-        cloud = dict_sort(cloud)
-        n = 0
-        for name, value in cloud.items():
-            book_data = cursor.execute("SELECT book_title,author\
-                    FROM stories WHERE filename=? COLLATE NOCASE"\
-                    ,(name,)).fetchone()
-            book = book_data[0]
-            author = book_data[1]
-            if book == 'None':
-                book = name
-            # Вывод в процентах:
-            value = round(value * 100, 5)
-            if value > 0.1 and n < output_max:
-                n = n + 1
-                print ('{0:2} {1:10} | {3:30} | {2}'.format(n, round(value, 3),
-                    book, author))
-                #print(value, book_data[0],book_data[1])
-
-def read_blobs(database_path, search_string='', output_max=20):
-    """Вывод ключевых слов таблицей."""
-    database = sqlite3.connect(metadict_path(database_path))
-    cursor = database.cursor()
-    search_string = ' '.join(search_string)
-    search_string = '%' + search_string + '%'
-    sql_list = cursor.execute(
-            "SELECT filename,tf_idf FROM stories WHERE filename LIKE ?\
-                    OR author LIKE ? OR book_title LIKE ? COLLATE NOCASE", [\
-            search_string,\
-            search_string,\
-            search_string,\
-            ]).fetchall()
-    # Исправить. Очень тормозная фигня, лучше filename прямо в облако ссылок прописать.
-    authors_dict = gen_authors_dict(database_path)
-    for n,sql_tuple in enumerate(sql_list,1):
-        print('# ----------------------------------------------------------------------------')
-        print('# ', n, '/', len(sql_list), sql_tuple[0])
-        print('# ----------------------------------------------------------------------------')
-        cloud = pickle.loads(sql_tuple[1])
-        cloud = dict_sort(cloud)
-        n = 0
-        for word, value in cloud.items():
-            if n < output_max:
-                n = n + 1
-                print ('{0:3} {1:10} | {2:30} | {3}'.format(n, round(value),
-                    word, authors_dict.get(word)[2]))
-            else:
-                break
 
 #-------------------------------------------------------------------------
 # Тело программы:
@@ -709,10 +675,13 @@ if __name__ == '__main__':
     # Создаём общий список слов:
     if regen_words_table:
         gen_words_table(DATABASE_PATH)
-        gen_wordfreq_idf(DATABASE_PATH)
-        gen_links(DATABASE_PATH)
-    # Вывод данных:
-    if namespace.output is True:
-        read_blobs(DATABASE_PATH, namespace.search_string, namespace.output_max)
-    elif namespace.links is True:
-        read_links(DATABASE_PATH, namespace.search_string, namespace.output_max)
+        tokens_dict = gen_tokens_dict(DATABASE_PATH)
+        gen_wordfreq_idf(DATABASE_PATH, tokens_dict)
+        gen_links(DATABASE_PATH, tokens_dict)
+
+#-------------------------------------------------------------------------
+
+    # Тесты скорости
+    #test_start = datetime.datetime.today()
+    #test_end = datetime.datetime.today()
+    #print((test_end - test_start).microseconds)
