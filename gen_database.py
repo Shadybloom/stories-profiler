@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 
 # Извлекаем текст, название и автора из fb2, fb2.zip и txt, переносим в базу данных.
-# Создаём таблицы частоты слов (с нормализацией) и фраз (разделённых знаками препинания).
+# Создаём таблицы частоты слов (с нормализацией) и фраз под два-три слова (в чистом виде).
 
 import re
 import os
+import sys
 import argparse
 import zipfile
 import sqlite3
@@ -14,13 +15,13 @@ import collections
 from math import log
 from lxml import etree
 from itertools import groupby
+
 # Функции из соседних скриптов:
 import wordfreq_morph
 from profiler_config import *
 
 # Исправить. Таймер для тестов, не забудь убрать:
-import datetime
-import sys
+#import datetime
 
 #-------------------------------------------------------------------------
 # Функции:
@@ -32,21 +33,9 @@ def create_parser():
                         nargs='*',
                         help='Файлы в формате fb2'
                         )
-    parser.add_argument('-s', '--search',
-                        action='store', dest='search_string', type=str, nargs='*', default='',
-                        help='Поиск в базе данных'
-                        )
-    parser.add_argument('-S', '--score',
-                        action='store', dest='output_max', type=int, default=OUTPUT_LINES,
-                        help='Число строк в выводе.'
-                        )
-    parser.add_argument('-l', '--links',
+    parser.add_argument('-R', '--regen',
                         action='store_true', default='False',
-                        help='Вывод таблицы схожих текстов'
-                        )
-    parser.add_argument('-o', '--output',
-                        action='store_true', default='False',
-                        help='Вывод таблицы ключевых слов'
+                        help='Перезаписывает основную таблицу в бд.'
                         )
     return parser
 
@@ -414,22 +403,17 @@ def fill_words_dict(words_all_dict, story_wordfreq_dict, storytuple, count):
     return words_all_dict
 
 def gen_words_table(database_path):
-    """Создаём текстовый корпус. Самые распространённые слова в текстах."""
-    # Исправить. Проверить.
+    """Создаём текстовый корпус. Самые распространённые слова в текстах.
+    
+    Эта функция -- пожиратель памяти, поскольку все ключи обрабатываются в RAM.
+    """
+    # Исправить.
     # Алгоритм шустрый, но жрёт память как свинья. Весь словарь в RAM.
-    # Поразмысли, может, лучше в первый цикл засунуть не рассказы, а слова.
-        # И записывать значения в таблицу после обработки каждого слова.
-        # Но тогда получается слишком много обращений к бд.
-    # Мысль, может подряд всё записывать, а потом почистить таблицу от одинаковых слов/фраз?
-        # То есть создать новую таблицу, где всё будет чисто и аккуратно.
-        # Получается одно обращение на каждый элемент, хотя и с поиском.
-        # Кстати, таким манером можно создать единую таблицу TF-IDF для всех рассказов, теги же.
-        # Это выглядит как отличная идея. Обязательно испытай!
+    # Известно, как это исправить, но всю структуру бд придётся переписать.
     words_all_dict = {}
     phrases_all_dict = {}
     database = sqlite3.connect(metadict_path(database_path))
     cursor = database.cursor()
-    # В этом месте мы загружаем список с id и названиями, а дальше перебираем по id:
     stories_list = cursor.execute("SELECT id, filename FROM stories").fetchall()
     # Исправить.
     # Вовсе не обязательно сносить таблицы, можно ведь обновить!
@@ -439,18 +423,16 @@ def gen_words_table(database_path):
         story_id, filename = nametuple
         # Миллионы, миллионы ключей!
         keys_test = len(words_all_dict) + len(phrases_all_dict)
-        ram_test = (int(sys.getsizeof(words_all_dict)) + int(sys.getsizeof(phrases_all_dict))) /1024 /1024
+        ram_test = (int(sys.getsizeof(words_all_dict))\
+                + int(sys.getsizeof(phrases_all_dict))) /1024 /1024
         # Бесполезное украшательство такое бесполезное (зато проблемный словарь на виду):
         print('{0} / {1} {2:60} | {3:10} KEYS: {4:4} Mb'.format(
             story_id, len(stories_list), nametuple[1], keys_test, round(ram_test)
             ))
-        #print(story_id, '/', len(stories_list), filename)
-        # Берём кортеж из базы данных:
         storytuple = cursor.execute("SELECT filename, book_title, author,\
                 wordcount, phrasecount, wordfreq, phrasefreq\
                 FROM stories WHERE id=?"\
                 ,(story_id,)).fetchone()
-        #print(storytuple[0:5])
         wordcount = storytuple[3]
         phrasecount = storytuple[4]
         story_wordfreq_dict = pickle.loads(storytuple[5])
@@ -464,7 +446,6 @@ def gen_words_table(database_path):
     for word,data in words_all_dict.items():
         # Можно резко сократить размер словаря, если вместо имён/названий вставлять id рассказа.
         # Нифига подобного. Словари -- умные штуки, одну запись по 100500 раз не дублируют.
-        #print(data,word)
         wordcount, storycount, word_percent, top_filename, top_story, top_author = data
         cursor.execute("INSERT INTO words VALUES(NULL,?,?,?,?,?,?,?)", [\
             word,\
@@ -476,7 +457,6 @@ def gen_words_table(database_path):
             top_author,\
         ])
     for phrase,data in phrases_all_dict.items():
-        #print(data,phrase)
         phrasecount, storycount, phrase_percent, top_filename, top_story, top_author = data
         cursor.execute("INSERT INTO phrases VALUES(NULL,?,?,?,?,?,?,?)", [\
             phrase,\
@@ -503,6 +483,7 @@ def gen_tokens_dict(database_path):
             "SELECT phrase, storycount, top_filename FROM phrases"
             ).fetchall()
     # Сначала фразы, затем слова:
+    # Малозначимые значения переписываются
     for i in phrases_list:
         tokens_dict[i[0]] = i[1:3]
     for i in words_list:
@@ -666,22 +647,15 @@ if __name__ == '__main__':
     if os.path.exists(metadict_path(DATABASE_PATH)) is not True:
         create_stories_database(DATABASE_PATH)
     
-    # Работаем:
+    # Обрабатываем книги, заргужаем в бд:
     for n,file_path in enumerate(filelist,1):
         if not filename_in_database(file_path, DATABASE_PATH):
             print(n, '/', len(filelist), file_path)
-            regen_words_table = True
+            REGEN_WORDS_TABLE = True
             select_file(file_path)
-    # Создаём общий список слов:
-    if regen_words_table:
+    # Создаём  слов:
+    if namespace.regen or REGEN_WORDS_TABLE is True:
         gen_words_table(DATABASE_PATH)
         tokens_dict = gen_tokens_dict(DATABASE_PATH)
         gen_wordfreq_idf(DATABASE_PATH, tokens_dict)
         gen_links(DATABASE_PATH, tokens_dict)
-
-#-------------------------------------------------------------------------
-
-    # Тесты скорости
-    #test_start = datetime.datetime.today()
-    #test_end = datetime.datetime.today()
-    #print((test_end - test_start).microseconds)

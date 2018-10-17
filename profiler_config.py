@@ -15,6 +15,6 @@ PHRASEFREQ_MIN = 2
 SCORE_MIN = 5
 SCORE_MAX = 5000
 # С каждым новым текстом в бд таблица всё равно пересоздаётся:
-regen_words_table = False
+REGEN_WORDS_TABLE = False
 # Строк в выводе:
 OUTPUT_LINES = 20
