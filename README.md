@@ -22,8 +22,12 @@ IDF (Inverse Document Frequency) — величина, обратная коли
 
 Перейдём в каталог скрипта:  
 `cd ./stories-profiler`  
-Создадим рабочий каталог:  
+Создадим каталог для текстов:  
 `mkdir -p ./data/ponyfiction_fb2`  
+Создаём список ссылок на понифики как минимум в 10k слов:  
+`words=10000 ; curl -A "Mozilla/5.0 (Windows NT 6.1; rv:52.0) Gecko/20100101 Firefox/52.0" "https://ponyfiction.org/search/?q=&type=0&sort=0&original=1&min_words=$words&page=[1-100]" | egrep 'download' | sed 's/.*href="/https:\/\/ponyfiction.org/' | sed 's/" class=.*//' > data/urls.txt`  
+Загружаем файлы по списку ссылок в рабочий каталог (в 10 потоков, чтобы быстрее):  
+`cat ./data/urls.txt | xargs -t -P 10 -n1 wget "Mozilla/5.0 (Windows NT 6.1; rv:52.0) Gecko/20100101 Firefox/52.0" -P data/ponyfiction_fb2`  
 Запускаем генерацию базы данных:  
 `./gen_database.py data/ponyfiction_fb2`  
 
@@ -58,16 +62,19 @@ IDF (Inverse Document Frequency) — величина, обратная коли
 
 **Думаем над новым форматом базы данных:**  
 * raw - таблица из частотных словарей слов и фраз:  
-`phrase_id, source_id, frequency, word/phrase, used_mark`  
-sources - таблица с общими данными по книге:  
-`source_id, wordcount, phrasecount, файл, название, автор`  
-corpora - таблица обработанных слов и фраз:  
+`phrase_id, source_id, frequency, word/phrase, tf_idf`  
+* sources - таблица с общими данными по книге:  
+`source_id, wordcount, phrasecount, файл, название, автор, linkscloud`  
+* corpora - таблица обработанных слов и фраз:  
 `token_id, source_id, sum_frequency, storycount, word/phrase, файл, название, автор`  
 
 **Детали:**
 Вопрос, как нам перебрать токены, чтобы передать уникальные в таблицу phrases?  
 Берём группой, обрабатываем, передаём, на остальные ставим метку. Единичку.  
 >SQLite does not have a separate Boolean storage class. Instead, Boolean values are stored as integers 0 (false) and 1 (true).  
+
+Вместо used_mark мы пересчитываем для каждого слова tf_idf.  
+Хотя, это замедлит работу скрипта. Причём здорово замедлит, но параметр так и так нужно считать.  
 
 Так можно увеличить значение:  
 `UPDATE {Table} SET {Column} = {Column} + {Value} WHERE {Condition}`  
