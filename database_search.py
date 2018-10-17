@@ -148,6 +148,8 @@ def read_tokens(database_path, search_string='', output_max=20):
     cursor = database.cursor()
     storycount_all = cursor.execute("SELECT count(id) FROM stories").fetchone()[0]
     tokens_list = get_tokens(search_string, cursor)
+    with open(metadict_path(TOKENS_DICT), "rb") as pickle_dict:
+        tokens_dict = pickle.load(pickle_dict)
     files_list = [ ]
     # Чистим список файлов от повторяющихся элементов:
     files_list = set([el[3] for el in tokens_list])
@@ -166,9 +168,11 @@ def read_tokens(database_path, search_string='', output_max=20):
         # Выводим данные из словаря:
         n = 0
         for token,score in dict_sort(output_dict).items():
+            book, author = get_bookdata(tokens_dict[token][1], cursor)
             if n < output_max:
                 n += 1
-                print ('{0:10} | {1}'.format(round(score), token))
+                print ('{0:3} {1:10} | {2:30} | {3}'.format(n, round(score),
+                    token, author))
             else:
                 break
 
