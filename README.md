@@ -43,9 +43,9 @@ IDF (Inverse Document Frequency) — величина, обратная коли
 Вывод характерных для рассказа слов/фраз:  
 `./database_search.py -o Янтарь`  
 Вывод используемых скриптом поисковых токенов:  
-`./database_search.py -p Янтарь`  
+`./database_search.py -t Янтарь`  
 Вывод того же, но в файл и без ограничения строк:  
-`./database_search.py -L 10000 Янтарь > /tmp/tokens.txt`  
+`./database_search.py -t -L 10000 Янтарь > /tmp/tokens.txt`  
 
 ## Скриншоты
 

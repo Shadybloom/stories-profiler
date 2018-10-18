@@ -37,7 +37,7 @@ def create_parser():
                         action='store_true', default='False',
                         help='Вывод таблицы TF-IDF слов рассказа'
                         )
-    parser.add_argument('-p', '--phrases',
+    parser.add_argument('-t', '--tokens',
                         action='store_true', default='False',
                         help='Вывод характерных для автора/рассказа слов/фраз'
                         )
@@ -81,9 +81,9 @@ def get_tokens(search_string, cursor):
     search_string = '%' + search_string + '%'
     # Поиск по всему, где только возможно:
     tokens_list = cursor.execute(
-            "SELECT phrase, phrasecount, storycount, top_filename FROM phrases\
+            "SELECT phrase, phrasecount, storycount, top_filename, top_story, top_author FROM phrases\
                     WHERE top_author LIKE ? OR top_story LIKE ? OR top_filename LIKE ?\
-                    UNION SELECT word, wordcount, storycount, top_filename FROM words\
+                    UNION SELECT word, wordcount, storycount, top_filename, top_story, top_author FROM words\
                     WHERE top_author LIKE ? OR top_story LIKE ? OR top_filename LIKE ?", [\
             search_string,\
             search_string,\
@@ -114,7 +114,6 @@ def read_links(database_path, search_string='', output_max=20, blob='links'):
                 n = n + 1
                 print ('{0:2} {1:10} | {3:30} | {2}'.format(n, round(value, 3),
                     book, author))
-                #print(value, book_data[0],book_data[1])
             else:
                 break
 
@@ -134,6 +133,8 @@ def read_blobs(database_path, search_string='', output_max=20, blob='tf_idf'):
         cloud = dict_sort(cloud)
         n = 0
         for word, value in cloud.items():
+            # Исправить
+            # Эта хрень тормозит, лучше вовсе убрать:
             book, author = get_bookdata(tokens_dict[word][1], cursor)
             if n < output_max:
                 n = n + 1
@@ -148,12 +149,10 @@ def read_tokens(database_path, search_string='', output_max=20):
     cursor = database.cursor()
     storycount_all = cursor.execute("SELECT count(id) FROM stories").fetchone()[0]
     tokens_list = get_tokens(search_string, cursor)
-    with open(metadict_path(TOKENS_DICT), "rb") as pickle_dict:
-        tokens_dict = pickle.load(pickle_dict)
     files_list = [ ]
     # Чистим список файлов от повторяющихся элементов:
     files_list = set([el[3] for el in tokens_list])
-    for n, filename in enumerate(files_list,0):
+    for n, filename in enumerate(files_list,1):
         print('# ----------------------------------------------------------------------------')
         print('# ', n, '/', len(files_list), filename)
         print('# ----------------------------------------------------------------------------')
@@ -162,16 +161,19 @@ def read_tokens(database_path, search_string='', output_max=20):
             # Выводим только те слова, которые относятся к рассказу (иначе дублирование):
             if token_tuple[3] == filename:
                 word, wordcount, storycount = token_tuple[0:3]
+                filename, story, author = token_tuple[3:6]
                 # Вычисляем рейтинг слов по методу TF-IDF
                 word_tf_idf = wordcount * log(storycount_all / storycount)
-                output_dict[word] = word_tf_idf
+                # Добавляем в словарь, где ключ -- токен, а в значении рейтинг и автор:
+                output_dict[word] = word_tf_idf, filename, story, author
         # Выводим данные из словаря:
         n = 0
-        for token,score in dict_sort(output_dict).items():
-            book, author = get_bookdata(tokens_dict[token][1], cursor)
+        for token, outtuple in dict_sort(output_dict).items():
+            word_tf_idf, filename, story, author = outtuple
+            #print(book,author)
             if n < output_max:
                 n += 1
-                print ('{0:3} {1:10} | {2:30} | {3}'.format(n, round(score),
+                print ('{0:3} {1:10} | {2:30} | {3}'.format(n, round(word_tf_idf),
                     token, author))
             else:
                 break
@@ -191,7 +193,7 @@ if __name__ == '__main__':
         read_links(DATABASE_PATH, namespace.search_string, namespace.output_lines)
     elif namespace.output is True:
         read_blobs(DATABASE_PATH, namespace.search_string, namespace.output_lines)
-    elif namespace.phrases is True:
+    elif namespace.tokens is True:
         read_tokens(DATABASE_PATH, namespace.search_string, namespace.output_lines)
     else:
         read_links(DATABASE_PATH, namespace.search_string, namespace.output_lines)
