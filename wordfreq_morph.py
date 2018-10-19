@@ -21,12 +21,7 @@ import re
 import argparse
 import collections
 import pymorphy2
-
-#------------------------------------------------------------------------------
-# Опции:
-
-# Проверочный морфологический словарь (в каталоге скрипта):
-OPENCORPORA_DICT = '/database/opencorpora-sing-nom.sqlite'
+from profiler_config import *
 
 #-------------------------------------------------------------------------
 # Аргументы командной строки:
