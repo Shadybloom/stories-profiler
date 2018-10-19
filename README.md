@@ -33,8 +33,10 @@ IDF (Inverse Document Frequency) — величина, обратная коли
 
 Процесс можно прервать в любое мгновение, данные сохраняются. Сначала обрабатываются книги (если в конфиге указано `MORPHY_SOFT = True` то довольно медленно), затем создаются таблицы токенов, после этого вычисляется TF-IDF и граф связей.  
 
-Если нужно обновить базу данных, достаточно дать скрипту любую новую книгу, или поставить в конфиге:  
-`regen_words_table = True`  
+Выбор другой базы данных:  
+`./gen_database.py -D database/ficbook.sqlite`  
+Если нужно обновить базу данных, достаточно дать скрипту любую новую книгу, или ключ -R:  
+`./gen_database.py -R`  
 
 ## Поиск в базе данных
 
@@ -47,11 +49,21 @@ IDF (Inverse Document Frequency) — величина, обратная коли
 Вывод того же, но в файл и без ограничения строк:  
 `./database_search.py -t -L 10000 Янтарь > /tmp/tokens.txt`  
 
+## Сравнение с внешними файлами
+
+Вывод ключевых слов:  
+`./wordfreq-tf-idf.py ~/chat.log -o`  
+Поиск схожих работ в базе данных:  
+`cat ~/workspace/amber-in-the-dark/chapters/* | ./wordfreq-tf-idf.py`  
+Вывод из буфера обмена (нужен xclip):  
+`xclip -o | ./wordfreq-tf-idf.py`  
+
 ## Скриншоты
 
+![Няшка](/images/cutie.png)  
 ![Пример](/images/example3.png)  
 ![Пример](/images/example4.png)  
-![Попался](/images/catched.png)  
+![Попался](/images/catched2.png)  
 
 ## Заметки:
 
@@ -68,7 +80,7 @@ IDF (Inverse Document Frequency) — величина, обратная коли
 * corpora - таблица обработанных слов и фраз:  
 `token_id, source_id, sum_frequency, storycount, word/phrase, файл, название, автор`  
 
-**Детали:**
+**Детали:**  
 Вопрос, как нам перебрать токены, чтобы передать уникальные в таблицу phrases?  
 Берём группой, обрабатываем, передаём, на остальные ставим метку. Единичку.  
 >SQLite does not have a separate Boolean storage class. Instead, Boolean values are stored as integers 0 (false) and 1 (true).  
