@@ -22,8 +22,8 @@ IDF (Inverse Document Frequency) — величина, обратная коли
 
 Перейдём в каталог скрипта:  
 `cd ./stories-profiler`  
-Создадим каталог для текстов:  
-`mkdir -p ./data/ponyfiction_fb2`  
+Создадим каталоги для базы данных и текстов:  
+`mkdir ./database ; mkdir -p ./data/ponyfiction_fb2`  
 Создаём список ссылок на понифики как минимум в 10k слов:  
 `words=10000 ; curl -A "Mozilla/5.0 (Windows NT 6.1; rv:52.0) Gecko/20100101 Firefox/52.0" "https://ponyfiction.org/search/?q=&type=0&sort=0&original=1&min_words=$words&page=[1-100]" | egrep 'download' | sed 's/.*href="/https:\/\/ponyfiction.org/' | sed 's/" class=.*//' > data/urls.txt`  
 Загружаем файлы по списку ссылок в рабочий каталог (в 10 потоков, чтобы быстрее):  
