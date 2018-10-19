@@ -1,4 +1,4 @@
-BOOKS_DIR = '.data/ponyfiction_fb2'
+BOOKS_DIR = 'data/ponyfiction_fb2'
 DATABASE_DIR = 'database'
 TOKENS_DICT = 'database/tokens.pickle'
 DATABASE_PATH = 'database/stories.sqlite'
@@ -14,7 +14,5 @@ PHRASEFREQ_MIN = 2
 # Минимальные и максимальные значения tf-idf для построения облака ссылок:
 SCORE_MIN = 5
 SCORE_MAX = 5000
-# С каждым новым текстом в бд таблица всё равно пересоздаётся:
-REGEN_WORDS_TABLE = False
 # Строк в выводе:
 OUTPUT_LINES = 20

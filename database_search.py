@@ -14,6 +14,7 @@ import wordfreq_morph
 from profiler_config import *
 from gen_database import dict_sort
 from gen_database import metadict_path
+from gen_database import load_tokens_dict
 
 #-------------------------------------------------------------------------
 # Функции:
@@ -25,10 +26,6 @@ def create_parser():
                         action='store', type=str, nargs='*', default='',
                         help='Поиск в базе данных (Янтарь, Янт, yantar)'
                         )
-    #parser.add_argument('-f', '--file',
-    #                    action='store', type=str, nargs='*', default=None,
-    #                    help='Обработка файла (fb2.zip, fb2, txt)'
-    #                    )
     parser.add_argument('-l', '--links',
                         action='store_true', default='False',
                         help='Вывод таблицы схожих текстов'
@@ -55,11 +52,15 @@ def get_bookdata(filename, cursor):
     book_data = cursor.execute("SELECT book_title,author\
             FROM stories WHERE filename=?"\
             ,(filename,)).fetchone()
-    book = book_data[0]
-    author = book_data[1]
-    if book == 'None':
+    try:
+        book = book_data[0]
+        author = book_data[1]
+        if book == 'None':
+            book = filename
+        if author == 'None':
+            author = filename
+    except:
         book = filename
-    if author == 'None':
         author = filename
     return book, author
 
@@ -123,8 +124,7 @@ def read_blobs(database_path, search_string='', output_max=20, blob='tf_idf'):
     cursor = database.cursor()
     sql_list = get_blob(search_string, blob, cursor)
     # Берём сохранённый на диске словарь. Он огромный, пересоздавать медленно.
-    with open(metadict_path(TOKENS_DICT), "rb") as pickle_dict:
-        tokens_dict = pickle.load(pickle_dict)
+    tokens_dict = load_tokens_dict()
     for n,sql_tuple in enumerate(sql_list,1):
         print('# ----------------------------------------------------------------------------')
         print('# ', n, '/', len(sql_list), sql_tuple[0])
@@ -133,8 +133,6 @@ def read_blobs(database_path, search_string='', output_max=20, blob='tf_idf'):
         cloud = dict_sort(cloud)
         n = 0
         for word, value in cloud.items():
-            # Исправить
-            # Эта хрень тормозит, лучше вовсе убрать:
             book, author = get_bookdata(tokens_dict[word][1], cursor)
             if n < output_max:
                 n = n + 1
@@ -170,6 +168,8 @@ def read_tokens(database_path, search_string='', output_max=20):
         n = 0
         for token, outtuple in dict_sort(output_dict).items():
             word_tf_idf, filename, story, author = outtuple
+            if author == 'None':
+                author = filename
             #print(book,author)
             if n < output_max:
                 n += 1
@@ -185,10 +185,10 @@ if __name__ == '__main__':
     # Создаётся список аргументов скрипта:
     parser = create_parser()
     namespace = parser.parse_args()
-
+    # Проверяем, не указана ли другая база данных:
     if namespace.database is not DATABASE_PATH:
         DATABASE_PATH = namespace.database
-
+    # В зависимоси от опций выбираем задачу:
     if namespace.links is True:
         read_links(DATABASE_PATH, namespace.search_string, namespace.output_lines)
     elif namespace.output is True:

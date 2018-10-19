@@ -37,6 +37,10 @@ def create_parser():
                         action='store_true', default='False',
                         help='Перезаписывает основную таблицу в бд.'
                         )
+    parser.add_argument('-D', '--database',
+                        action='store', dest='database', type=str, default=DATABASE_PATH,
+                        help='Путь к другой базе данных'
+                        )
     return parser
 
 def metadict_path (metadict_dir):
@@ -240,19 +244,14 @@ def create_stories_database (database_path):
         links
         )""")
     database.close()
-    print("[OK] CREATE",database_path)
+    print("[OK] CREATE:",database_path)
 
-def create_words_table(database_path):
+def create_words_table(cursor):
     """Таблица слов в базе данных.
     
     Включает слова, счётчики.
     И названия текстов, где чаще всего встречается это слово.
     """
-    database = sqlite3.connect(metadict_path(database_path))
-    cursor = database.cursor()
-    cursor.execute(
-            "DROP TABLE IF EXISTS words"
-            )
     cursor.execute("""CREATE TABLE IF NOT EXISTS words (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
         word TEXT NOT NULL,
@@ -273,19 +272,13 @@ def create_words_table(database_path):
         top_story,
         top_author
         )""")
-    database.close()
 
-def create_phrases_table(database_path):
+def create_phrases_table(cursor):
     """Таблица фраз в базе данных.
     
     Включает фразы, счётчики.
     И названия текстов, где чаще всего встречается эта фраза.
     """
-    database = sqlite3.connect(metadict_path(database_path))
-    cursor = database.cursor()
-    cursor.execute(
-            "DROP TABLE IF EXISTS phrases"
-            )
     cursor.execute("""CREATE TABLE IF NOT EXISTS phrases (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
         phrase TEXT NOT NULL,
@@ -306,6 +299,21 @@ def create_phrases_table(database_path):
         top_story,
         top_author
         )""")
+
+def purge_database(database_path):
+    """Пересоздаём таблицы слов/фраз, обнуляем блобы tf_idf и links.
+
+    Это приходится делать каждый раз с добавлением нового текста.
+    Частичную переработку таблиц эта модель бд, увы, не поддерживает.
+    """
+    database = sqlite3.connect(metadict_path(database_path))
+    cursor = database.cursor()
+    cursor.execute("DROP TABLE IF EXISTS words")
+    cursor.execute("DROP TABLE IF EXISTS phrases")
+    create_words_table(cursor)
+    create_phrases_table(cursor)
+    cursor.execute("UPDATE stories SET tf_idf=NULL, links=NULL")
+    database.commit()
     database.close()
 
 def book_to_database (database_path, file_path, fb2_dict):
@@ -336,6 +344,7 @@ def book_to_database (database_path, file_path, fb2_dict):
     phrasecount = int(fb2_dict.get('phrasecount'))
     wordfreq_count = int(fb2_dict.get('wordfreq_count'))
     phrasefreq_count = int(fb2_dict.get('phrasefreq_count'))
+    # Запаковываем словари в блобы:
     wordfreq = pickle.dumps(fb2_dict.get('wordfreq'))
     phrasefreq = pickle.dumps(fb2_dict.get('phrasefreq'))
     # Без таблицы слов/фраз заполнить TF-IDF невозможно:
@@ -415,20 +424,8 @@ def gen_words_table(database_path):
     database = sqlite3.connect(metadict_path(database_path))
     cursor = database.cursor()
     stories_list = cursor.execute("SELECT id, filename FROM stories").fetchall()
-    # Исправить.
-    # Вовсе не обязательно сносить таблицы, можно ведь обновить!
-    create_words_table(database_path)
-    create_phrases_table(database_path)
     for nametuple in stories_list:
         story_id, filename = nametuple
-        # Миллионы, миллионы ключей!
-        keys_test = len(words_all_dict) + len(phrases_all_dict)
-        ram_test = (int(sys.getsizeof(words_all_dict))\
-                + int(sys.getsizeof(phrases_all_dict))) /1024 /1024
-        # Бесполезное украшательство такое бесполезное (зато проблемный словарь на виду):
-        print('{0} / {1} {2:60} | {3:10} KEYS: {4:4} Mb'.format(
-            story_id, len(stories_list), nametuple[1], keys_test, round(ram_test)
-            ))
         storytuple = cursor.execute("SELECT filename, book_title, author,\
                 wordcount, phrasecount, wordfreq, phrasefreq\
                 FROM stories WHERE id=?"\
@@ -443,6 +440,14 @@ def gen_words_table(database_path):
         # По очереди перебираем слова из списка рассказа, обновляем объединённый словарь:
         fill_words_dict(words_all_dict, story_wordfreq_dict, storytuple, wordcount)
         fill_words_dict(phrases_all_dict, story_phrasefreq_dict, storytuple, phrasecount)
+        # Миллионы, миллионы ключей!
+        keys_test = len(words_all_dict) + len(phrases_all_dict)
+        ram_test = (int(sys.getsizeof(words_all_dict))\
+                + int(sys.getsizeof(phrases_all_dict))) /1024 /1024
+        # Бесполезное украшательство такое бесполезное (зато проблемный словарь на виду):
+        print('{0} / {1} {2:60} | {3:10} KEYS: {4:4} Mb'.format(
+            story_id, len(stories_list), filename, keys_test, round(ram_test)
+            ))
     for word,data in words_all_dict.items():
         # Можно резко сократить размер словаря, если вместо имён/названий вставлять id рассказа.
         # Нифига подобного. Словари -- умные штуки, одну запись по 100500 раз не дублируют.
@@ -469,7 +474,7 @@ def gen_words_table(database_path):
         ])
     database.commit()
     database.close()
-    print("[OK] CREATE words/phrases tables",database_path)
+    print("[OK] CREATE {0} KEYS: {1}".format(keys_test, database_path))
 
 def gen_tokens_dict(database_path):
     """Создаёт словарь соответствий: слово -- число текстов с ним, ключевой текст"""
@@ -488,16 +493,28 @@ def gen_tokens_dict(database_path):
         tokens_dict[i[0]] = i[1:3]
     for i in words_list:
         tokens_dict[i[0]] = i[1:3]
-    # Сохраняем словарь рядом с базой данных, пригодится:
-    with open(metadict_path(TOKENS_DICT), "wb") as output_file:
-        pickle.dump(tokens_dict, output_file)
-        output_file.close
-        print("[OK] CREATE",TOKENS_DICT)
-    #for el,val in tokens_dict.items():
-    #    print(val, el)
     return tokens_dict
 
-def tf_idf(wordfreq_dict, cursor, tokens_dict=TOKENS_DICT):
+def create_tokens_dict(database_path=DATABASE_PATH, filename=TOKENS_DICT):
+    """Сохраняем словарь рядом с базой данных, потому что он 100+ Mb."""
+    tokens_dict = gen_tokens_dict(database_path)
+    with open(metadict_path(filename), "wb") as output_file:
+        pickle.dump(tokens_dict, output_file)
+        output_file.close
+        print("[OK] CREATE",filename)
+    return tokens_dict
+
+def load_tokens_dict(database_path=DATABASE_PATH, file_path=TOKENS_DICT):
+    """Загружаем словарь, или создаём, если вдруг потерялся."""
+    if os.path.isfile(file_path):
+        with open(metadict_path(file_path), "rb") as pickle_dict:
+            tokens_dict = pickle.load(pickle_dict)
+        pickle_dict.closed
+    else:
+        tokens_dict = gen_tokens_dict(database_path)
+    return tokens_dict
+
+def tf_idf(wordfreq_dict, tokens_dict):
     """Функция вычисляет рейтинг TF-IDF для каждого слова в словаре.
 
     TF-IDF вычисляется для каждого слова по очень простой формуле TF x IDF, где:
@@ -513,48 +530,44 @@ def tf_idf(wordfreq_dict, cursor, tokens_dict=TOKENS_DICT):
     n -- кол-во текстов, в которых есть это слово.
     """
     score_dict = {}
-    storycount_all = cursor.execute("SELECT count(id) FROM stories").fetchone()[0]
-    # Довольно большой словарь, лучше загрузить, чем пересоздавать:
-    if type(tokens_dict) is not dict:
-        with open(metadict_path(tokens_dict), "rb") as pickle_dict:
-            tokens_dict = pickle.load(pickle_dict)
-        pickle_dict.closed
+    # Определяем N по словарю:
+    stories_list = [el[1] for el in tokens_dict.values()]
+    storycount_all = len(set(stories_list))
     # Перебор слов, вычисление рейтинга:
     for word, wordfreq in wordfreq_dict.items():
         if word in tokens_dict:
-            word_score = wordfreq * log(storycount_all / tokens_dict[word][0])
-            score_dict[word] = word_score
-    # Тесты:
-    #score_dict = dict_sort(score_dict)
-    #for el, value in score_dict.items():
-    #    if value > 5:
-    #        print(value, el)
+            storycount = tokens_dict[word][0]
+        else:
+            storycount = 1
+        # Основная формула скрипта:
+        word_score = wordfreq * log(storycount_all / storycount)
+        score_dict[word] = word_score
     return score_dict
 
 def gen_wordfreq_idf(database_path, tokens_dict=TOKENS_DICT):
     """Функция вычисляет параметры TF-IDF для слов каждого текста в базе данных."""
     database = sqlite3.connect(metadict_path(database_path))
     cursor = database.cursor()
-    if type(tokens_dict) is not dict:
-        with open(metadict_path(tokens_dict), "rb") as pickle_dict:
-            tokens_dict = pickle.load(pickle_dict)
-        pickle_dict.closed
-    #tokens_dict = gen_tokens_dict(database_path)
-    stories_list = cursor.execute("SELECT id, filename FROM stories").fetchall()
+    stories_list = cursor.execute("SELECT id, filename FROM stories WHERE tf_idf IS NULL").fetchall()
+    if len(stories_list) == 0:
+        return
+    storycount_all = cursor.execute("SELECT count(id) FROM stories").fetchone()[0]
+    tokens_dict = load_tokens_dict(database_path)
     # По очереди перебираем рассказы и создаём словари TF-IDF
+    tf_counter = 0
     for nametuple in stories_list:
         story_id, filename = nametuple
-        print(story_id, '/', len(stories_list), filename)
         # Берём кортеж из базы данных:
         storytuple = cursor.execute("SELECT wordfreq, phrasefreq FROM stories WHERE id=?"\
                 ,(story_id,)).fetchone()
         story_wordfreq_dict = pickle.loads(storytuple[0])
         story_phrasefreq_dict = pickle.loads(storytuple[1])
         # Перебираем слова в тексте. Если находим, вычисляем TF-IDF:
-        wordscore_dict = tf_idf(story_wordfreq_dict, cursor, tokens_dict)
-        phrasescore_dict = tf_idf(story_phrasefreq_dict, cursor, tokens_dict)
+        wordscore_dict = tf_idf(story_wordfreq_dict, tokens_dict)
+        phrasescore_dict = tf_idf(story_phrasefreq_dict, tokens_dict)
         # Обновляем словарь фраз словарём слов:
         phrasescore_dict.update(wordscore_dict)
+        tf_counter = tf_counter + len(phrasescore_dict)
         score_dict = phrasescore_dict
         score_dict = pickle.dumps(score_dict)
         cursor.execute("UPDATE stories SET tf_idf=? WHERE filename=?", [\
@@ -562,8 +575,10 @@ def gen_wordfreq_idf(database_path, tokens_dict=TOKENS_DICT):
             filename,\
             ])
         database.commit()
+        print('{0} / {1} {2:60} | {3:10} TF-IDF'.format(
+            story_id, storycount_all, filename, tf_counter))
     database.close()
-    print("[OK] CREATE tf_idf",database_path)
+    print("[OK] CREATE {0} TF-IDF: {1}".format(tf_counter, database_path))
 
 def create_linkscloud(local_dict, tokens_dict, score_min=SCORE_MIN, score_max=SCORE_MAX):
     dict_links = {}
@@ -584,33 +599,35 @@ def create_linkscloud(local_dict, tokens_dict, score_min=SCORE_MIN, score_max=SC
     return dict_links
 
 def gen_links(database_path, tokens_dict=TOKENS_DICT):
+    """Функция вычисляет граф связей для всех текстов."""
     database = sqlite3.connect(metadict_path(database_path))
     cursor = database.cursor()
-    stories_list = cursor.execute("SELECT id, filename FROM stories").fetchall()
-    storycount_all = len(stories_list)
-    #tokens_dict = gen_tokens_dict(database_path)
-    if type(tokens_dict) is not dict:
-        with open(metadict_path(tokens_dict), "rb") as pickle_dict:
-            tokens_dict = pickle.load(pickle_dict)
-        pickle_dict.closed
+    stories_list = cursor.execute("SELECT id, filename FROM stories WHERE links IS NULL").fetchall()
+    if len(stories_list) == 0:
+        return
+    storycount_all = cursor.execute("SELECT count(id) FROM stories").fetchone()[0]
+    tokens_dict = load_tokens_dict(database_path)
     # По очереди перебираем рассказы и создаём словари TF-IDF
+    links_counter = 0
     for nametuple in stories_list:
         story_id, filename = nametuple
-        print(story_id, '/', len(stories_list), filename)
         tokens_tuple = cursor.execute("SELECT tf_idf FROM stories WHERE id=?"\
                 ,(story_id,)).fetchone()
         local_dict = pickle.loads(tokens_tuple[0])
         dict_links = create_linkscloud(local_dict, tokens_dict)
+        links_counter += len(dict_links)
         dict_links = pickle.dumps(dict_links)
         cursor.execute("UPDATE stories SET links=? WHERE filename=?", [\
             dict_links,\
             filename,\
             ])
         database.commit()
+        print('{0} / {1} {2:60} | {3:10} LINKS'.format(
+            story_id, storycount_all, filename, links_counter))
     database.close()
-    print("[OK] CREATE links",database_path)
+    print("[OK] CREATE {0} LINKS: {1}".format(links_counter, database_path))
 
-def select_file(file_path):
+def select_file(file_path, database_path):
     """Определяем тип файла, конвертируем и переносим в базу данных.
 
     Скрипт умеет распаковывать fb2.zip, парсит fiction_book и читает txt.
@@ -618,15 +635,15 @@ def select_file(file_path):
     # fb2.zip распаковываем, fb2 парсим, текст исследуем:
     if zipfile.is_zipfile(file_path):
         fb2 = extract_fb2_zip(file_path)
-        book_to_database(DATABASE_PATH, file_path, fb2_to_dict(fb2))
+        book_to_database(database_path, file_path, fb2_to_dict(fb2))
     elif os.path.splitext(file_path)[1][1:] == 'fb2':
         fb2 = file_path
-        book_to_database(DATABASE_PATH, file_path, fb2_to_dict(fb2))
+        book_to_database(database_path, file_path, fb2_to_dict(fb2))
     else:
         file = open(file_path, "r")
         text = file.read()
         file.close()
-        book_to_database(DATABASE_PATH, file_path, txt_to_dict(text))
+        book_to_database(database_path, file_path, txt_to_dict(text))
 
 #-------------------------------------------------------------------------
 # Тело программы:
@@ -636,26 +653,45 @@ if __name__ == '__main__':
     # Создаётся список аргументов скрипта:
     parser = create_parser()
     namespace = parser.parse_args()
-    
     # Создаём список файлов:
     if namespace.file:
         filelist = (pathfinder(namespace.file))
     else:
-        filelist = (pathfinder(BOOKS_DIR))
-    
-    # Создаём базу данных:
-    if os.path.exists(metadict_path(DATABASE_PATH)) is not True:
-        create_stories_database(DATABASE_PATH)
-    
+        # Больше проблем создаёт, чем пользы:
+        #filelist = (pathfinder(metadict_path(BOOKS_DIR)))
+        filelist = [ ]
+    # Проверяем, не указана ли другая база данных:
+    if namespace.database is not DATABASE_PATH:
+        database_path = namespace.database
+    else:
+        database_path = DATABASE_PATH
+    # Создаётся база данных, если её нет:
+    if os.path.exists(metadict_path(database_path)) is not True:
+        create_stories_database(database_path)
     # Обрабатываем книги, заргужаем в бд:
-    for n,file_path in enumerate(filelist,1):
-        if not filename_in_database(file_path, DATABASE_PATH):
-            print(n, '/', len(filelist), file_path)
-            REGEN_WORDS_TABLE = True
-            select_file(file_path)
-    # Создаём  слов:
-    if namespace.regen or REGEN_WORDS_TABLE is True:
-        gen_words_table(DATABASE_PATH)
-        tokens_dict = gen_tokens_dict(DATABASE_PATH)
-        gen_wordfreq_idf(DATABASE_PATH, tokens_dict)
-        gen_links(DATABASE_PATH, tokens_dict)
+    # В отдельную функцию:
+    if filelist:
+        new_texts = 0
+        print("[CONSUME]: {0}".format(namespace.file))
+        for n,file_path in enumerate(filelist,1):
+            if not filename_in_database(file_path, database_path):
+                print(n, '/', len(filelist), file_path)
+                try:
+                    select_file(file_path, database_path)
+                    new_texts = n
+                except Exception as error_output:
+                    print(error_output)
+        print("[OK] GET {0} TEXTS: {1}".format(new_texts, database_path))
+    if new_texts > 0 or namespace.regen is True:
+        # Создаём таблицу ключевых слов/фраз, а затем словари TF-IDF и граф связей:
+        print("[REGEN]: {0}".format(database_path))
+        purge_database(database_path)
+        gen_words_table(database_path)
+        create_tokens_dict(database_path)
+        gen_wordfreq_idf(database_path)
+        gen_links(database_path)
+    # Если таблицы неполные (из-за прерывания), пополняем:
+    else:
+        print("[RESUME]: {0}".format(database_path))
+        gen_wordfreq_idf(database_path)
+        gen_links(database_path)
