@@ -13,7 +13,7 @@ from itertools import groupby
 import wordfreq_morph
 from profiler_config import *
 from gen_database import dict_sort
-from gen_database import metadict_path
+from gen_database import correct_path
 from gen_database import load_tokens_dict
 
 #-------------------------------------------------------------------------
@@ -66,38 +66,27 @@ def get_bookdata(filename, cursor):
 
 def get_blob(search_string, table, cursor):
     search_string = ' '.join(search_string)
-    search_string = '%' + search_string + '%'
-    blob_list = cursor.execute(
-            "SELECT filename, " + table + " FROM stories WHERE filename LIKE ?\
-                    OR author LIKE ? OR book_title LIKE ?", [\
-            search_string,\
-            search_string,\
-            search_string,\
-            ]).fetchall()
+    sql_query = "SELECT filename, {t} FROM stories WHERE filename LIKE '%{s}%' \
+            OR author LIKE '%{s}%' OR book_title LIKE '%{s}%'" \
+            .format(t=table, s=search_string)
+    blob_list = cursor.execute(sql_query).fetchall()
     return blob_list
 
 def get_tokens(search_string, cursor):
     """Выбираем характерные для автора слова:"""
     search_string = ' '.join(search_string)
-    search_string = '%' + search_string + '%'
     # Поиск по всему, где только возможно:
-    tokens_list = cursor.execute(
-            "SELECT phrase, phrasecount, storycount, top_filename, top_story, top_author FROM phrases\
-                    WHERE top_author LIKE ? OR top_story LIKE ? OR top_filename LIKE ?\
-                    UNION SELECT word, wordcount, storycount, top_filename, top_story, top_author FROM words\
-                    WHERE top_author LIKE ? OR top_story LIKE ? OR top_filename LIKE ?", [\
-            search_string,\
-            search_string,\
-            search_string,\
-            search_string,\
-            search_string,\
-            search_string,\
-            ]).fetchall()
+    sql_query = "SELECT phrase, phrasecount, storycount, top_filename, top_story, top_author FROM phrases\
+            WHERE top_author LIKE '%{s}%' OR top_story LIKE '%{s}%' OR top_filename LIKE '%{s}%'\
+            UNION SELECT word, wordcount, storycount, top_filename, top_story, top_author FROM words\
+            WHERE top_author LIKE '%{s}%' OR top_story LIKE '%{s}%' OR top_filename LIKE '%{s}%'"\
+            .format(s=search_string)
+    tokens_list = cursor.execute(sql_query).fetchall()
     return tokens_list
 
 def read_links(database_path, search_string='', output_max=20, blob='links'):
     """Вывод схожих рассказов таблицей."""
-    database = sqlite3.connect(metadict_path(database_path))
+    database = sqlite3.connect(database_path)
     cursor = database.cursor()
     sql_list = get_blob(search_string, blob, cursor)
     for n,sql_tuple in enumerate(sql_list,1):
@@ -118,13 +107,13 @@ def read_links(database_path, search_string='', output_max=20, blob='links'):
             else:
                 break
 
-def read_blobs(database_path, search_string='', output_max=20, blob='tf_idf'):
+def read_blobs(database_path, search_string='', output_max=20, tokens_path=TOKENS_DICT, blob='tf_idf'):
     """Вывод ключевых слов таблицей."""
-    database = sqlite3.connect(metadict_path(database_path))
+    database = sqlite3.connect(database_path)
     cursor = database.cursor()
     sql_list = get_blob(search_string, blob, cursor)
     # Берём сохранённый на диске словарь. Он огромный, пересоздавать медленно.
-    tokens_dict = load_tokens_dict()
+    tokens_dict = load_tokens_dict(tokens_path)
     for n,sql_tuple in enumerate(sql_list,1):
         print('# ----------------------------------------------------------------------------')
         print('# ', n, '/', len(sql_list), sql_tuple[0])
@@ -143,7 +132,7 @@ def read_blobs(database_path, search_string='', output_max=20, blob='tf_idf'):
 
 def read_tokens(database_path, search_string='', output_max=20):
     """Вывод характерных для автора слов."""
-    database = sqlite3.connect(metadict_path(database_path))
+    database = sqlite3.connect(database_path)
     cursor = database.cursor()
     storycount_all = cursor.execute("SELECT count(id) FROM stories").fetchone()[0]
     tokens_list = get_tokens(search_string, cursor)
@@ -185,14 +174,13 @@ if __name__ == '__main__':
     # Создаётся список аргументов скрипта:
     parser = create_parser()
     namespace = parser.parse_args()
-    # Проверяем, не указана ли другая база данных:
-    if namespace.database is not DATABASE_PATH:
-        DATABASE_PATH = namespace.database
+    # Уточняем пути к базе данных и основному словарю:
+    database_path, tokens_path = correct_path(namespace.database)
     # В зависимоси от опций выбираем задачу:
     if namespace.links is True:
         read_links(DATABASE_PATH, namespace.search_string, namespace.output_lines)
     elif namespace.output is True:
-        read_blobs(DATABASE_PATH, namespace.search_string, namespace.output_lines)
+        read_blobs(DATABASE_PATH, namespace.search_string, namespace.output_lines, tokens_path)
     elif namespace.tokens is True:
         read_tokens(DATABASE_PATH, namespace.search_string, namespace.output_lines)
     else:

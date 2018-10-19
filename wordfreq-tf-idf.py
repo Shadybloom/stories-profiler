@@ -9,7 +9,7 @@ import sys
 import argparse
 import sqlite3
 from profiler_config import *
-from gen_database import metadict_path
+from gen_database import correct_path
 from gen_database import dict_sort
 from gen_database import txt_to_dict
 from gen_database import tf_idf
@@ -46,9 +46,10 @@ def create_parser():
                         )
     return parser
 
-def output_score(local_dict, tokens_dict, filename, database_path=DATABASE_PATH, output_max=20):
+def output_score(local_dict, tokens_dict, filename,
+        database_path=DATABASE_PATH, output_max=20):
     """Вывод рейтинга TF-IDF."""
-    database = sqlite3.connect(metadict_path(database_path))
+    database = sqlite3.connect(database_path)
     cursor = database.cursor()
     score_dict = tf_idf(local_dict, tokens_dict)
     n = 0
@@ -61,9 +62,10 @@ def output_score(local_dict, tokens_dict, filename, database_path=DATABASE_PATH,
         else:
             break
 
-def output_links(local_dict, tokens_dict, filename, database_path=DATABASE_PATH, output_max=20):
+def output_links(local_dict, tokens_dict, filename,
+        database_path=DATABASE_PATH, output_max=20):
     """Вывод похожих текстов."""
-    database = sqlite3.connect(metadict_path(database_path))
+    database = sqlite3.connect(database_path)
     cursor = database.cursor()
     score_dict = tf_idf(local_dict, tokens_dict)
     cloud = create_linkscloud(score_dict, tokens_dict)
@@ -86,14 +88,10 @@ if __name__ == '__main__':
     # Создаётся список аргументов скрипта:
     parser = create_parser()
     namespace = parser.parse_args()
-    # Исправить. Если другая бд, то и другой словарь нужно генерировать.
-    # Проверяем, не указана ли другая база данных:
-    if namespace.database is not DATABASE_PATH:
-        database_path = namespace.database
-        tokens_dict = gen_tokens_dict(database_path)
-    else:
-        database_path = DATABASE_PATH
-        tokens_dict = load_tokens_dict()
+    # Уточняем пути к базе данных и основному словарю:
+    database_path, tokens_path = correct_path(namespace.database)
+    # Загружаем основной словарь:
+    tokens_dict = load_tokens_dict(database_path, tokens_path)
     # Проверяем, существует ли указанный файл:
     if namespace.file:
         file_path = namespace.file[0]
@@ -112,10 +110,13 @@ if __name__ == '__main__':
     local_dict.update(text_dict['wordfreq'])
     # Выводим данные:
     if namespace.links is True:
-        output_links(local_dict, tokens_dict, filename, database_path, namespace.output_lines)
+        output_links(local_dict, tokens_dict, filename,
+                database_path, namespace.output_lines)
     elif namespace.output is True:
-        output_score(local_dict, tokens_dict, filename, database_path, namespace.output_lines)
+        output_score(local_dict, tokens_dict, filename,
+                database_path, namespace.output_lines)
     else:
         # Исправить
         # Хау, сделай извлечение токенов из текста. Это же ключевое.
-        output_links(local_dict, tokens_dict, filename, database_path, namespace.output_lines)
+        output_links(local_dict, tokens_dict, filename,
+                database_path, namespace.output_lines)

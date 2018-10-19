@@ -26,9 +26,7 @@ import pymorphy2
 # Опции:
 
 # Проверочный морфологический словарь (в каталоге скрипта):
-NORMAL_DICT_PATH = 'dict.opencorpora-sing-nom.txt'
-NORMAL_DICT_DIR = 'word-length-dicts'
-database_name = '/database/opencorpora-sing-nom.sqlite'
+OPENCORPORA_DICT = '/database/opencorpora-sing-nom.sqlite'
 
 #-------------------------------------------------------------------------
 # Аргументы командной строки:
@@ -61,13 +59,13 @@ def create_parser():
 #-------------------------------------------------------------------------
 # Функции:
 
-def metadict_path (metadict_dir):
+def script_path (metadict_dir):
     """Возвращает абсолютный путь к каталогу словарей."""
     # Получаем абсолютный путь к каталогу скрипта:
     script_path = os.path.dirname(os.path.abspath(__file__))
     # Добавляем к пути каталог словарей:
-    metadict_path = script_path + '/' + metadict_dir
-    return metadict_path
+    script_path = script_path + '/' + metadict_dir
+    return script_path
 
 def find_files (directory):
     """Возвращает список путей ко всем файлам каталога, включая подкаталоги."""
@@ -177,7 +175,7 @@ def run (text, morph_soft=False, morph_forced=False, phrases=False, phrases_toke
     # Извлекаем из текста слова:
     words = split_to_words(text)
     # Подключение к базе данных:
-    database = sqlite3.connect(metadict_path(database_name))
+    database = sqlite3.connect(script_path(OPENCORPORA_DICT))
     cursor = database.cursor()
     # Если указано преобразование слов:
     if morph_soft is True and phrases is not True:

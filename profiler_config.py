@@ -1,7 +1,8 @@
-BOOKS_DIR = 'data/ponyfiction_fb2'
+#BOOKS_DIR = 'data/ponyfiction_fb2'
 DATABASE_DIR = 'database'
 TOKENS_DICT = 'database/tokens.pickle'
 DATABASE_PATH = 'database/stories.sqlite'
+OPENCORPORA_DICT = '/dicts/opencorpora-sing-nom.sqlite'
 # Нормализация слов с помощью pymorphy:
 MORPHY_SOFT = True
 MORPHY_FORCED = False
