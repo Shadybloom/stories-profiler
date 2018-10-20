@@ -17,3 +17,14 @@ SCORE_MIN = 5
 SCORE_MAX = 5000
 # Строк в выводе:
 OUTPUT_LINES = 20
+
+# Опции вывода graphviz:
+# Вывод в файл:
+IMG_DIR = 'output'
+# Число проходов цикла:
+RECURSION_LVL = 5
+# Чувствительность:
+SIMILARITY_SCORE_MIN = 0.0
+SIMILARITY_MAX = 200
+# Число нод в выводе:
+NODES_MAX = 20
