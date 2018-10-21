@@ -396,6 +396,7 @@ def book_to_database (database_path, file_path, fb2_dict):
         ])
     database.commit()
     database.close()
+    return wordcount
 
 def filename_in_database (file_path, database_path):
     """Проверка, есть ли название в базе данных."""
@@ -471,7 +472,7 @@ def gen_words_table(database_path):
         ram_test = (int(sys.getsizeof(words_all_dict))\
                 + int(sys.getsizeof(phrases_all_dict))) /1024 /1024
         # Бесполезное украшательство такое бесполезное (зато проблемный словарь на виду):
-        print('{0} / {1} {2:60} | {3:10} KEYS: {4:4} Mb'.format(
+        print('{0} / {1} {2:60} | {3:10,d} KEYS: {4:4,d} Mb'.format(
             story_id, len(stories_list), filename, keys_test, round(ram_test)))
     for word,data in words_all_dict.items():
         # Можно резко сократить размер словаря, если вместо имён/названий вставлять id рассказа.
@@ -499,7 +500,7 @@ def gen_words_table(database_path):
         ])
     database.commit()
     database.close()
-    print("[OK] CREATE {0} KEYS: {1}".format(keys_test, database_path))
+    print("[OK] CREATE {0:,d} KEYS: {1}".format(keys_test, database_path))
 
 def gen_tokens_dict(database_path):
     """Создаёт словарь соответствий: слово -- число текстов с ним, ключевой текст"""
@@ -608,10 +609,10 @@ def gen_wordfreq_idf(database_path, tokens_dict=TOKENS_DICT):
             filename,\
             ])
         database.commit()
-        print('{0} / {1} {2:60} | {3:10} TF-IDF'.format(
+        print('{0} / {1} {2:60} | {3:10,d} TF-IDF'.format(
             story_id, storycount_all, filename, tf_counter))
     database.close()
-    print("[OK] CREATE {0} TF-IDF: {1}".format(tf_counter, database_path))
+    print("[OK] CREATE {0:,d} TF-IDF: {1}".format(tf_counter, database_path))
 
 def create_linkscloud(local_dict, tokens_dict, score_min=SCORE_MIN, score_max=SCORE_MAX):
     dict_links = {}
@@ -656,40 +657,46 @@ def gen_links(database_path, tokens_dict=TOKENS_DICT):
             filename,\
             ])
         database.commit()
-        print('{0} / {1} {2:60} | {3:10} LINKS'.format(
+        print('{0} / {1} {2:60} | {3:10,d} LINKS'.format(
             story_id, storycount_all, filename, links_counter))
     database.close()
-    print("[OK] CREATE {0} LINKS: {1}".format(links_counter, database_path))
+    print("[OK] CREATE {0:,d} LINKS: {1}".format(links_counter, database_path))
 
-def select_file(file_path, database_path):
+def consume_files(filelist, database_path):
     """Определяем тип файла, конвертируем и переносим в базу данных.
 
     Скрипт умеет распаковывать fb2.zip, парсит fiction_book и читает txt.
     """
-    # fb2.zip распаковываем, fb2 парсим, текст исследуем:
-    if zipfile.is_zipfile(file_path):
-        fb2 = extract_fb2_zip(file_path)
-        book_to_database(database_path, file_path, fb2_to_dict(fb2))
-    elif os.path.splitext(file_path)[1][1:] == 'fb2':
-        fb2 = file_path
-        book_to_database(database_path, file_path, fb2_to_dict(fb2))
-    else:
-        file = open(file_path, "r")
-        text = file.read()
-        file.close()
-        book_to_database(database_path, file_path, txt_to_dict(text))
-
-def consume_files(filelist, database_path):
     texts_count = 0
+    words_count = 0
+    words_consume = 0
     for n,file_path in enumerate(filelist,1):
+        # Проверяем по имени файла, есть ли такой в базе данных:
         if not filename_in_database(file_path, database_path):
-            print(n, '/', len(filelist), file_path)
+            # fb2.zip распаковываем, fb2 парсим, текст исследуем:
             try:
-                select_file(file_path, database_path)
+                if zipfile.is_zipfile(file_path):
+                    fb2 = extract_fb2_zip(file_path)
+                    # Переносим книги в БД, заодно считаем слова:
+                    words_consume = book_to_database(
+                            database_path, file_path, fb2_to_dict(fb2))
+                elif os.path.splitext(file_path)[1][1:] == 'fb2':
+                    fb2 = file_path
+                    words_consume = book_to_database(
+                            database_path, file_path, fb2_to_dict(fb2))
+                else:
+                    file = open(file_path, "r")
+                    text = file.read()
+                    file.close()
+                    words_consume = book_to_database(
+                            database_path, file_path, txt_to_dict(text))
                 texts_count += 1
             except Exception as error_output:
                 print(error_output)
-    print("[OK] GET {0} TEXTS: {1}".format(texts_count, database_path))
+            words_count += words_consume
+            print('{0} / {1} {2:60} | {3:10,d} WORDS'.format(
+                n, len(filelist), file_path, words_consume))
+    print("[OK] GET {0:,d} WORDS: {1}".format(words_count, database_path))
     return texts_count
 
 #-------------------------------------------------------------------------
@@ -711,8 +718,9 @@ if __name__ == '__main__':
     # Проверяем базу данных:
     if os.path.exists(database_path) is not True:
         create_stories_database(database_path)
+        purge_database(database_path)
     elif test_table(database_path, 'stories') is not True:
-        create_stories_database(database_path)
+        purge_database(database_path)
     # Обрабатываем книги, заргужаем в базу данных:
     if filelist:
         print("[CONSUME]: {0}".format(namespace.file))
