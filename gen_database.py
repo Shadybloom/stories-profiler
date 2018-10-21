@@ -327,6 +327,27 @@ def test_table(database_path, table):
     if tables_list:
         return True
 
+def stats_database(database_path):
+    """Выводит статистику базы данных.
+    
+    Суммараное число слов (и усреднённое на рассказ)
+    Число рассказов и авторов, число поисковых токенов.
+    """
+    database = sqlite3.connect(database_path)
+    cursor = database.cursor()
+    words_all = cursor.execute("SELECT SUM(wordcount) FROM stories").fetchone()[0]
+    stories_all = cursor.execute("SELECT COUNT(id) FROM stories").fetchone()[0]
+    authors_all = len(set(cursor.execute("SELECT author FROM stories").fetchall()))
+    words = cursor.execute("SELECT count(id) FROM words").fetchone()[0]
+    phrases = cursor.execute("SELECT count(id) FROM phrases").fetchone()[0]
+    if None in (words_all, stories_all, authors_all, words, phrases):
+        print('[ERROR] EMPTY DATABASE:', database_path)
+    else:
+        tokens_all = words + phrases
+        wordcount_medial = round(words_all / stories_all)
+        print("[READY]: WORDS {0:,d} (MID {1:,d}) KEYS {2:,d} STORIES {3:,d} AUTHORS {4:,d}"
+                .format(words_all, wordcount_medial, tokens_all, stories_all, authors_all))
+
 def purge_database(database_path):
     """Пересоздаём таблицы слов/фраз, обнуляем блобы tf_idf и links.
 
@@ -735,6 +756,7 @@ if __name__ == '__main__':
         create_tokens_dict(database_path, tokens_path)
         gen_wordfreq_idf(database_path, tokens_path)
         gen_links(database_path, tokens_path)
+        stats_database(database_path)
     # Если таблицы неполные (из-за прерывания), пополняем:
     else:
         print("[RESUME]: {0}".format(database_path))
@@ -742,3 +764,4 @@ if __name__ == '__main__':
             create_tokens_dict(database_path, tokens_path)
         gen_wordfreq_idf(database_path, tokens_path)
         gen_links(database_path, tokens_path)
+        stats_database(database_path)
