@@ -695,6 +695,8 @@ def consume_files(filelist, database_path):
         # Проверяем по имени файла, есть ли такой в базе данных:
         if not filename_in_database(file_path, database_path):
             # fb2.zip распаковываем, fb2 парсим, текст исследуем:
+            print('{0} / {1} {2:60} | {3:10,d} WORDS'.format(
+                n, len(filelist), file_path, words_consume))
             try:
                 if zipfile.is_zipfile(file_path):
                     fb2 = extract_fb2_zip(file_path)
@@ -717,8 +719,6 @@ def consume_files(filelist, database_path):
             if words_consume is None:
                 words_consume = 0
             words_count += words_consume
-            print('{0} / {1} {2:60} | {3:10,d} WORDS'.format(
-                n, len(filelist), file_path, words_consume))
     print("[OK] GET {0:,d} WORDS: {1}".format(words_count, database_path))
     return texts_count
 
