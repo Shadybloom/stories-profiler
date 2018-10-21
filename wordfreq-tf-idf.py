@@ -46,8 +46,7 @@ def create_parser():
                         )
     return parser
 
-def output_score(local_dict, tokens_dict, filename,
-        database_path=DATABASE_PATH, output_max=20):
+def output_score(local_dict, tokens_dict, filename, database_path=DATABASE_PATH, output_max=20):
     """Вывод рейтинга TF-IDF."""
     database = sqlite3.connect(database_path)
     cursor = database.cursor()
@@ -62,8 +61,7 @@ def output_score(local_dict, tokens_dict, filename,
         else:
             break
 
-def output_links(local_dict, tokens_dict, filename,
-        database_path=DATABASE_PATH, output_max=20):
+def output_links(local_dict, tokens_dict, filename, database_path=DATABASE_PATH, output_max=20):
     """Вывод похожих текстов."""
     database = sqlite3.connect(database_path)
     cursor = database.cursor()

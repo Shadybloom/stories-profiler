@@ -113,7 +113,7 @@ def read_blobs(database_path, search_string='', output_max=20, tokens_path=TOKEN
     cursor = database.cursor()
     sql_list = get_blob(search_string, blob, cursor)
     # Берём сохранённый на диске словарь. Он огромный, пересоздавать медленно.
-    tokens_dict = load_tokens_dict(tokens_path)
+    tokens_dict = load_tokens_dict(database_path, tokens_path)
     for n,sql_tuple in enumerate(sql_list,1):
         print('# ----------------------------------------------------------------------------')
         print('# ', n, '/', len(sql_list), sql_tuple[0])
@@ -178,10 +178,10 @@ if __name__ == '__main__':
     database_path, tokens_path = correct_path(namespace.database)
     # В зависимоси от опций выбираем задачу:
     if namespace.links is True:
-        read_links(DATABASE_PATH, namespace.search_string, namespace.output_lines)
+        read_links(database_path, namespace.search_string, namespace.output_lines)
     elif namespace.output is True:
-        read_blobs(DATABASE_PATH, namespace.search_string, namespace.output_lines, tokens_path)
+        read_blobs(database_path, namespace.search_string, namespace.output_lines, tokens_path)
     elif namespace.tokens is True:
-        read_tokens(DATABASE_PATH, namespace.search_string, namespace.output_lines)
+        read_tokens(database_path, namespace.search_string, namespace.output_lines)
     else:
-        read_links(DATABASE_PATH, namespace.search_string, namespace.output_lines)
+        read_links(database_path, namespace.search_string, namespace.output_lines)
