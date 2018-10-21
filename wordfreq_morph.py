@@ -128,7 +128,9 @@ def word_search_opencorpora (word,cursor):
     word_length = len(word)
     tables = cursor.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
     if word_length > len(tables):
-        word_length = 32
+        return False
+    elif word_length == 0:
+        return False
     table_name = 'opencorpora' + str(word_length)
     result = cursor.execute("SELECT words FROM "+table_name+" WHERE words=?",(word,)).fetchall()
     if result:
