@@ -714,6 +714,8 @@ def consume_files(filelist, database_path):
                 texts_count += 1
             except Exception as error_output:
                 print(error_output)
+            if words_consume is None:
+                words_consume = 0
             words_count += words_consume
             print('{0} / {1} {2:60} | {3:10,d} WORDS'.format(
                 n, len(filelist), file_path, words_consume))
