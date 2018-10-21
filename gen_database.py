@@ -428,6 +428,23 @@ def filename_in_database (file_path, database_path):
             ,(filename,)).fetchall()
     return filename_test
 
+def clean_filelist (filelist, database_path):
+    """Проверяет, есть ли файлы из списка в базе данных. Возвращает список новых файлов."""
+    clear_filelist = []
+    database = sqlite3.connect(database_path)
+    cursor = database.cursor()
+    db_files = cursor.execute("SELECT filename FROM stories").fetchall()
+    db_files = [el[0] for el in db_files]
+    # Создаём список чистых имён файлов из полного пути, а затем фильтруем:
+    filenames = [str(os.path.basename(el)) for el in filelist]
+    new_filenames = list(set(filenames) - set(db_files))
+    # Восстанавливаем пути к файлам:
+    for file_path in filelist:
+        for filename in new_filenames:
+            if filename == os.path.basename(file_path):
+                clear_filelist.append(file_path)
+    return clear_filelist
+
 def fill_words_dict(words_all_dict, story_wordfreq_dict, storytuple, count):
     """Общий словарь заполняется словами из словарей рассказов.
 
@@ -480,21 +497,24 @@ def gen_words_table(database_path):
         storytuple = cursor.execute(sql_query).fetchone()
         wordcount = storytuple[3]
         phrasecount = storytuple[4]
-        story_wordfreq_dict = pickle.loads(storytuple[5])
-        story_phrasefreq_dict = pickle.loads(storytuple[6])
         # Исправить.
-        # Данные можно записывать после каждой обработки словаря.
-        # Да бесполезно, всё равно словарь в памяти приходится держать.
-        # По очереди перебираем слова из списка рассказа, обновляем объединённый словарь:
-        fill_words_dict(words_all_dict, story_wordfreq_dict, storytuple, wordcount)
-        fill_words_dict(phrases_all_dict, story_phrasefreq_dict, storytuple, phrasecount)
-        # Миллионы, миллионы ключей!
-        keys_test = len(words_all_dict) + len(phrases_all_dict)
-        ram_test = (int(sys.getsizeof(words_all_dict))\
-                + int(sys.getsizeof(phrases_all_dict))) /1024 /1024
-        # Бесполезное украшательство такое бесполезное (зато проблемный словарь на виду):
-        print('{0} / {1} {2:60} | {3:10,d} KEYS: {4:4,d} Mb'.format(
-            story_id, len(stories_list), filename, keys_test, round(ram_test)))
+        # Иногда бывают проблемы с кодировкой.
+        # Надо бы тест на кодировку или декодер раньше поставить:
+        try:
+            story_wordfreq_dict = pickle.loads(storytuple[5])
+            story_phrasefreq_dict = pickle.loads(storytuple[6])
+            # По очереди перебираем слова из списка рассказа, обновляем объединённый словарь:
+            fill_words_dict(words_all_dict, story_wordfreq_dict, storytuple, wordcount)
+            fill_words_dict(phrases_all_dict, story_phrasefreq_dict, storytuple, phrasecount)
+            # Миллионы, миллионы ключей!
+            keys_test = len(words_all_dict) + len(phrases_all_dict)
+            ram_test = (int(sys.getsizeof(words_all_dict))\
+                    + int(sys.getsizeof(phrases_all_dict))) /1024 /1024
+            # Бесполезное украшательство такое бесполезное (зато проблемный словарь на виду):
+            print('{0} / {1} {2:60} | {3:10,d} KEYS: {4:4,d} Mb'.format(
+                story_id, len(stories_list), filename, keys_test, round(ram_test)))
+        except Exception as error_output:
+            print(error_output, filename)
     for word,data in words_all_dict.items():
         # Можно резко сократить размер словаря, если вместо имён/названий вставлять id рассказа.
         # Нифига подобного. Словари -- умные штуки, одну запись по 100500 раз не дублируют.
@@ -692,9 +712,10 @@ def consume_files(filelist, database_path):
     words_count = 0
     words_consume = 0
     for n,file_path in enumerate(filelist,1):
-        # Проверяем по имени файла, есть ли такой в базе данных:
+        # Так-то фильтрация файлов сделана выше, но пусть будет проверка, на всякий случай:
         if not filename_in_database(file_path, database_path):
             # fb2.zip распаковываем, fb2 парсим, текст исследуем:
+            #print(file_path)
             try:
                 if zipfile.is_zipfile(file_path):
                     fb2 = extract_fb2_zip(file_path)
@@ -745,11 +766,15 @@ if __name__ == '__main__':
     elif test_table(database_path, 'stories') is not True:
         purge_database(database_path)
     # Обрабатываем книги, заргужаем в базу данных:
+    texts_count = 0
     if filelist:
-        print("[CONSUME]: {0}".format(namespace.file))
-        texts_count = consume_files(filelist, database_path)
-    else:
-        texts_count = 0
+        # Проверяем, есть ли новые файлы:
+        filelist_clean = clean_filelist(filelist, database_path)
+        if filelist_clean:
+            texts_count = consume_files(filelist, database_path)
+            print("[CONSUME]: {0}".format(namespace.file))
+        else:
+            print("[DONE]: {0}".format(namespace.file))
     # Создаём таблицу ключевых слов/фраз, а затем словари TF-IDF и граф связей:
     if texts_count > 0 or namespace.regen is True:
         print("[REGEN]: {0}".format(database_path))
