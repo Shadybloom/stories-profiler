@@ -64,11 +64,11 @@ def get_bookdata(filename, cursor):
         author = filename
     return book, author
 
-def get_blob(search_string, table, cursor):
+def get_blob(search_string, blob, cursor):
     search_string = ' '.join(search_string)
-    sql_query = "SELECT filename, {t} FROM stories WHERE filename LIKE '%{s}%' \
+    sql_query = "SELECT filename, {b} FROM stories WHERE filename LIKE '%{s}%' \
             OR author LIKE '%{s}%' OR book_title LIKE '%{s}%'" \
-            .format(t=table, s=search_string)
+            .format(b=blob, s=search_string)
     blob_list = cursor.execute(sql_query).fetchall()
     return blob_list
 
