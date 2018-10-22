@@ -37,6 +37,10 @@ def create_parser():
                         action='store_true', default='False',
                         help='Перезаписывает основную таблицу в бд.'
                         )
+    parser.add_argument('-r', '--reject',
+                        action='store_true', default=REJECT_DUPLICATES,
+                        help='Отбрасывать дубликаты (нужен tokens.pickle)'
+                        )
     parser.add_argument('-D', '--database',
                         action='store', dest='database', type=str, default=DATABASE_PATH,
                         help='Путь к другой базе данных'
@@ -703,43 +707,73 @@ def gen_links(database_path, tokens_dict=TOKENS_DICT):
     database.close()
     print("[OK] CREATE {0:,d} LINKS: {1}".format(links_counter, database_path))
 
-def consume_files(filelist, database_path):
+def detect_duplicates(text_dict, tokens_dict, reject_score=REJECT_SCORE):
+    """Отбрасываем уже обработанные в БД тексты.
+    
+    Проверка на сходство реагирует и на отдельные главы, и на отредактированные версии текстов.
+    """
+    # Чем больше текстов в базе данных, тем большая чувствительность требуется от функции.
+    # Нужно корректировать значение, но пока хардкод.
+    local_dict = text_dict['phrasefreq']
+    local_dict.update(text_dict['wordfreq'])
+    score_dict = tf_idf(local_dict, tokens_dict)
+    cloud = create_linkscloud(score_dict, tokens_dict)
+    key, value = max(cloud.items(), key=lambda x:x[1])
+    value *= 100
+    if value > reject_score:
+        return key, value
+
+def consume_files(filelist, database_path, reject_duplicates=REJECT_DUPLICATES):
     """Определяем тип файла, конвертируем и переносим в базу данных.
 
     Скрипт умеет распаковывать fb2.zip, парсит fiction_book и читает txt.
     """
     texts_count = 0
     words_count = 0
-    words_consume = 0
     for n,file_path in enumerate(filelist,1):
-        # Так-то фильтрация файлов сделана выше, но пусть будет проверка, на всякий случай:
         if not filename_in_database(file_path, database_path):
-            # fb2.zip распаковываем, fb2 парсим, текст исследуем:
             #print(file_path)
+            # Исправить.
+            # Переноси в отдельную функцию. Снова.
+            # fb2.zip распаковываем, fb2 парсим, текст исследуем:
             try:
                 if zipfile.is_zipfile(file_path):
                     fb2 = extract_fb2_zip(file_path)
-                    # Переносим книги в БД, заодно считаем слова:
-                    words_consume = book_to_database(
-                            database_path, file_path, fb2_to_dict(fb2))
+                    text_dict = fb2_to_dict(fb2)
                 elif os.path.splitext(file_path)[1][1:] == 'fb2':
                     fb2 = file_path
-                    words_consume = book_to_database(
-                            database_path, file_path, fb2_to_dict(fb2))
+                    text_dict = fb2_to_dict(fb2)
                 else:
                     file = open(file_path, "r")
                     text = file.read()
                     file.close()
-                    words_consume = book_to_database(
-                            database_path, file_path, txt_to_dict(text))
-                texts_count += 1
+                    text_dict = txt_to_dict(text)
             except Exception as error_output:
-                print(error_output)
-            if words_consume is None:
-                words_consume = 0
-            words_count += words_consume
-            print('{0} / {1} {2:60} | {3:10,d} WORDS'.format(
-                n, len(filelist), file_path, words_consume))
+                print('consume_files', error_output)
+            # Проверка на дубликаты:
+            copytuple = None
+            if reject_duplicates is True:
+                try:
+                    tokens_dict = load_tokens_dict(database_path, tokens_path)
+                    copytuple = detect_duplicates(text_dict, tokens_dict)
+                except Exception as error_output:
+                    print('reject_duplicates', error_output)
+            # Проверка на дубликаты создаёт свой ответ:
+            if copytuple:
+                database_filename, similarity = copytuple
+                print('{0} / {1} {2:53} [DETECT] {3:10}% COPY'.format(
+                    n, len(filelist), database_filename, round(similarity,2)))
+            # Если ответа нет, значит загружаем книгу (если она таки обработалась, лол):
+            else:
+                if text_dict:
+                    words_consume = book_to_database(
+                            database_path, file_path, text_dict)
+                    words_count += words_consume
+                    texts_count += 1
+                else:
+                    words_consume = 0
+                print('{0} / {1} {2:60} | {3:10,d} WORDS'.format(
+                    n, len(filelist), file_path, words_consume))
     print("[OK] GET {0:,d} WORDS: {1}".format(words_count, database_path))
     return texts_count
 
@@ -771,8 +805,8 @@ if __name__ == '__main__':
         # Проверяем, есть ли новые файлы:
         filelist_clean = clean_filelist(filelist, database_path)
         if filelist_clean:
-            texts_count = consume_files(filelist, database_path)
             print("[CONSUME]: {0}".format(namespace.file))
+            texts_count = consume_files(filelist, database_path, namespace.reject)
         else:
             print("[DONE]: {0}".format(namespace.file))
     # Создаём таблицу ключевых слов/фраз, а затем словари TF-IDF и граф связей:
