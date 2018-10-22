@@ -75,6 +75,23 @@ def create_parser():
                         )
     return parser
 
+def ordered_uniq(seq, idfun=None): 
+   # order preserving
+   # https://www.peterbe.com/plog/uniqifiers-benchmark
+   if idfun is None:
+       def idfun(x): return x
+   seen = {}
+   result = []
+   for item in seq:
+       marker = idfun(item)
+       # in old Python versions:
+       # if seen.has_key(marker)
+       # but in new ones:
+       if marker in seen: continue
+       seen[marker] = 1
+       result.append(item)
+   return result
+
 def get_graph(search_list, cursor):
     """Поисковые запросы к базе данных, принимает список, ищет по строкам.
     
@@ -114,10 +131,7 @@ def read_graph(search_string, database_path,
     
     Ближайшие рассказы переносим в список ссылок, чтобы обработать рекурсивно.
     """
-    # Исправить.
-    # Здесь можно отсеивать вершины, в которых нет перекрёстных ссылок.
-    # Ключ crosslinks
-    metadict_graph = {}
+    graph_list = []
     database = sqlite3.connect(database_path)
     cursor = database.cursor()
     search_string = ' '.join(search_string)
@@ -125,17 +139,17 @@ def read_graph(search_string, database_path,
     search_list = [search_string]
     # Рекурсивный обход графа, пока число собраных нод не достигнет предела:
     sql_list = get_graph(search_list, cursor)
-    # Резульатыт поиска, выводятся только ноды, ссылающиеся на них:
+    # Результаты поиска, выводятся только ноды, ссылающиеся на них:
     test_list = [el[0] for el in sql_list]
     cycle = 0
-    while len(metadict_graph) < nodes_max and cycle < recurion_lvl:
+    while len(graph_list) < nodes_max and cycle < recurion_lvl:
         cycle += 1
         sql_list = get_graph(search_list, cursor)
         # Начинаем обрабатывать найденные кортежи:
         for sql_tuple in sql_list:
             nametuple = sql_tuple[0:4]
             # Чистим облако ссылок и добавляем в основной словарь:
-            if len(metadict_graph) < nodes_max:
+            if len(graph_list) < nodes_max:
                 linkscloud_raw = pickle.loads(sql_tuple[4])
                 linkscloud = clear_linkscloud(linkscloud_raw, sense)
                 # Извлекаем ссылки для следующих циклов поиска:
@@ -144,19 +158,22 @@ def read_graph(search_string, database_path,
                 for link in links_list:
                     if link in test_list:
                         search_list.extend(links_list)
-                        metadict_graph[nametuple] = linkscloud
+                        out_tuple = nametuple, linkscloud
+                        graph_list.append(out_tuple)
                         break
             else:
                 break
-        # Чистим поисковый список от дублей и ключей основного словаря:
-        search_list = list(set(search_list) - set(metadict_graph.keys()))
+        # Чистим поисковый список (без ломающего порядок set)
+        # Функция ordered_uniq чистит список от дубликатов, сохраняя порядок.
+        # Затем мы создаём срез первого списка без элементов второго.
+        search_list = ordered_uniq(search_list)
+        reject_list = [el[0][0] for el in graph_list]
+        search_list = [el for el in search_list if el not in reject_list]
         # Ввыводим данные по ходу работы:
         if suppress_output is not True:
             print('CYCLE: {0} / {1} {2:60} | {3:10} KEYS'.format(
-                cycle, recurion_lvl, ' '.join(test_list), len(metadict_graph)))
-    #print(len(search_list))
-    #print(len(metadict_graph))
-    return metadict_graph
+                cycle, recurion_lvl, ' '.join(test_list), len(graph_list)))
+    return graph_list
 
 def format_namestring(nametuple):
     """Форматируем строку вывода."""
@@ -170,6 +187,8 @@ def format_namestring(nametuple):
 
 def format_connects(value, score=SIMILARITY_SCORE_MIN):
     """Упрощаем веса связей, чтобы в выводе не было слишком больших/мелких срелок."""
+    # Исправить.
+    # Какой же уродливый хардкод. Нужна хитрая функция, чобы и пики снижать и минимуму поднимать.
     value = round(value * 1000 * 2, 5)
     if value > 100:
         return 30
@@ -182,7 +201,7 @@ def format_connects(value, score=SIMILARITY_SCORE_MIN):
     else:
         return value
 
-def graphviz_output(metadict_graph):
+def graphviz_output(graph_list):
     # Исправить.
     # Это большая функция, раздели.
     # Для начала создаём проект и подключаем опции graphviz:
@@ -191,22 +210,22 @@ def graphviz_output(metadict_graph):
             node_attr=node_conf, edge_attr=edge_conf,\
             )
     # Вычисляем количество всех постов по wordcount текстов:
-    wordcount_all = sum(nametuple[3] for nametuple in metadict_graph.keys())
-    wordcount_medial = wordcount_all / len(metadict_graph.keys())
-    storycount = len(metadict_graph.keys())
+    wordcount_all = sum(nametuple[0][3] for nametuple in graph_list)
+    storycount = len(graph_list)
+    wordcount_medial = wordcount_all / storycount
+    files_list = [el[0][0] for el in graph_list]
     # Создаём ноды, поочерёдно перебирая неймфагов из словаря:
     hsv_color = 0
-    for nametuple in metadict_graph.keys():
+    for outtuple in graph_list:
+        nametuple = outtuple[0]
         filename, book_title, author, wordcount = nametuple[0:4]
-        # Исправить
-        # Имя ноды, это имя неймфага + трипкод + число постов.
         node_name = filename
         label = format_namestring(nametuple)
         # Толщина обводки, текста и размер ноды -- относительное число постов:
         node_strength = str(wordcount / wordcount_medial * 2)
         font_strength = str(log(wordcount / storycount) * 2)
         # Цвет в формате HSV, шаг зависит от числа неймфагов в словаре:
-        hsv_color = round(hsv_color + 1 / len(metadict_graph),4)
+        hsv_color = round(hsv_color + 1 / storycount,4)
         hsv_border = str(hsv_color)+','+'1'+','+'1'
         # Насыщенность цвета зависит от числа постов, меньше -- бледнее:
         hsv_saturation = str(wordcount / wordcount_all * 3)
@@ -216,11 +235,12 @@ def graphviz_output(metadict_graph):
                 width=node_strength, penwidth=node_strength)
     # Создаём линии связей, поочерёдно перебирая друзей каждого неймфага:
     hsv_color = 0
-    for nametuple, linkscloud in metadict_graph.items():
+    for outtuple in graph_list:
+        nametuple = outtuple[0]
+        linkscloud = outtuple[1]
         filename, book_title, author, wordcount = nametuple[0:4]
-        files_list = [el[0] for el in metadict_graph.keys()]
         # Опять же, насыщенность цвета зависит от числа постов:
-        hsv_color = round(hsv_color + 1 / len(metadict_graph),4)
+        hsv_color = round(hsv_color + 1 / storycount,4)
         hsv_saturation = str(wordcount / wordcount_all * 3)
         hsv = str(hsv_color)+','+hsv_saturation+','+'1'
         node_name = filename
@@ -228,8 +248,8 @@ def graphviz_output(metadict_graph):
         for friend, score in linkscloud.items():
             # Отбрасываем ссылки на ноды вне выборки и ссылки нод на самих себя:
             if friend in files_list and not friend == filename:
-                for key in metadict_graph.keys():
-                    if key[0] == friend:
+                for key in files_list:
+                    if key == friend:
                         friend_name = friend
                         connect_value = str(format_connects(score))
                         #connect_value = str(round(score * 1000 * 2, 5))
@@ -250,8 +270,8 @@ if __name__ == '__main__':
     namespace = parser.parse_args()
     # Уточняем пути к базе данных и основному словарю:
     database_path, tokens_path = correct_path(namespace.database)
-    # Создаём словарь с графом связей:
-    graph_dict = read_graph(namespace.search_string, database_path,
+    # Создаём список с графом связей:
+    graph_list = read_graph(namespace.search_string, database_path,
             namespace.cycles, namespace.sense, namespace.nodes, namespace.output)
     # Выводим данные с помощью graphviz:
-    graphviz_output(graph_dict)
+    graphviz_output(graph_list)
