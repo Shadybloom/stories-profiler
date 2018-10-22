@@ -20,8 +20,14 @@ import os
 import re
 import argparse
 import collections
-import pymorphy2
 from profiler_config import *
+
+# pymorphy2 служит для нормализации слов, а это вовсе не обязательно.
+try:
+    import pymorphy2
+except ImportError:
+    MORPHY_SOFT = False
+    MORPHY_FORCED = False
 
 #-------------------------------------------------------------------------
 # Аргументы командной строки:
