@@ -99,14 +99,14 @@ def get_graph(search_list, cursor):
 
 def clear_linkscloud(linkscloud, similarity_max=SIMILARITY_MAX, similarity_score=SIMILARITY_SCORE_MIN):
     """Фильтруем облако ссылок, ограничение по рейтингу соответствия и количеству элементов."""
-    linkcloud_clear = {}
+    linkscloud_clear = {}
     n = 0
     for key, el in dict_sort(linkscloud).items():
         score = el * 100
         if score > similarity_score and n < similarity_max:
-            linkcloud_clear[key] = el
+            linkscloud_clear[key] = el
             n += 1
-    return linkcloud_clear
+    return linkscloud_clear
 
 def read_graph(search_string, database_path,
         recurion_lvl=RECURSION_LVL, sense=SIMILARITY_MAX, nodes_max=NODES_MAX, suppress_output=False):
@@ -137,7 +137,7 @@ def read_graph(search_string, database_path,
             # Чистим облако ссылок и добавляем в основной словарь:
             if len(metadict_graph) < nodes_max:
                 linkscloud_raw = pickle.loads(sql_tuple[4])
-                linkscloud = dict_sort(clear_linkscloud(linkscloud_raw, sense))
+                linkscloud = clear_linkscloud(linkscloud_raw, sense)
                 # Извлекаем ссылки для следующих циклов поиска:
                 links_list = [key for key in linkscloud.keys()]
                 # Проверяем, ссылается ли нода на результаты первого поиска:
@@ -160,29 +160,27 @@ def read_graph(search_string, database_path,
 
 def format_namestring(nametuple):
     """Форматируем строку вывода."""
-    namestring = "{author}\n{book_title}\n{wordcount} words".format(
-            author = nametuple[2],
-            book_title = nametuple[1],
-            wordcount = nametuple[3]
-            )
+    filename, book_title, author, wordcount = nametuple
+    if book_title == 'None':
+        book_title = filename
+    if author == 'None':
+        author = 'Unknown'
+    namestring = "{0}\n{1}\n{2} words".format(author, book_title, wordcount)
     return namestring
 
 def format_connects(value, score=SIMILARITY_SCORE_MIN):
     """Упрощаем веса связей, чтобы в выводе не было слишком больших/мелких срелок."""
-    # Не нужно хардкодить, бери относительные значения от самого крупного и самого мелкого.
-    value = round(value * 100, 5)
-    if value > score * 16:
-        return 16
-    elif value > score * 8:
-        return 8
-    elif value > score * 4:
-        return 4
-    elif value > score * 2:
+    value = round(value * 1000 * 2, 5)
+    if value > 100:
+        return 30
+    if value > 50:
+        return 25
+    if value > 20:
+        return 20
+    elif value < 2:
         return 2
-    elif value >= score:
-        return 1
     else:
-        return 0
+        return value
 
 def graphviz_output(metadict_graph):
     # Исправить.
@@ -233,9 +231,8 @@ def graphviz_output(metadict_graph):
                 for key in metadict_graph.keys():
                     if key[0] == friend:
                         friend_name = friend
-                        #connect_value = str(format_connects(score))
-                        connect_value = str(round(score * 1000 * 2, 5))
-                        #print(connect_value, filename, friend)
+                        connect_value = str(format_connects(score))
+                        #connect_value = str(round(score * 1000 * 2, 5))
                         dot.edge(node_name, friend_name, color=hsv, penwidth=connect_value)
     # Вывод данных в формате dot:
     #print(dot.source)
