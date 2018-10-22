@@ -53,7 +53,14 @@ def output_score(local_dict, tokens_dict, filename, database_path=DATABASE_PATH,
     score_dict = tf_idf(local_dict, tokens_dict)
     n = 0
     for word, value in dict_sort(score_dict).items():
-        book, author = get_bookdata(filename, cursor)
+        # Пытаемся найти слово и вывести книгу, где оно встречается чаще всего:
+        try:
+            bookname = tokens_dict[word][1]
+        # Если не выйдет, значит слово характерно только для этого файла:
+        except KeyError:
+            bookname = filename
+        finally:
+            book, author = get_bookdata(bookname, cursor)
         if n < output_max:
             n = n + 1
             print ('{0:3} {1:10} | {2:30} | {3}'.format(n, round(value),
