@@ -132,3 +132,39 @@ Graphviz, очевидно, отвечает за вывод графов. Ес�
 `UPDATE {Table} SET {Column} = {Column} + {Value} WHERE {Condition}`  
 
 Сначала заносим данные в raw и sources, затем потихоньку обрабатываем.  
+
+## База данных флибусты
+
+**Список из 1000 самых популярных книг:**  
+`curl -A "Mozilla/5.0 (Windows NT 6.1; rv:52.0) Gecko/20100101 Firefox/52.0" "http://flibustahezeous3.onion/stat/b?page=[0-9]" |  egrep -o '\- <a href="/b/[0-9]+">' | sed 's|- <a href="|http://flibustahezeous3.onion|' | sed 's|">|/fb2|' > /tmp/urls.txt`
+
+**Загружаем книги по списку:**  
+```
+mkdir /tmp/flibusta_top_fb2 ; cd /tmp/flibusta_top_fb2
+while read url;
+do
+name=`echo $url | egrep -o '[0-9][0-9]+' | sed 's/\(.*\)/\1.fb2/'`
+echo "$name"
+wget -q -U 'Mozilla/5.0 (Windows NT 6.1; rv:38.0) Gecko/20100101 Firefox/38.0' $url -O $name                              
+done < /tmp/urls.txt
+```
+
+40 книг из списка не перевариваются декодером. Кот знает, что с ними не так.
+
+## База данных самиздата
+
+**Список из 2000 книг, жанр фэнтези:**  
+`curl -A "Mozilla/5.0 (Windows NT 6.1; rv:52.0) Gecko/20100101 Firefox/52.0" "http://samlib.ru/janr/index_janr_hits24-[1-10].shtml" | egrep -o ': <a href=.*shtml>' | sed 's|: <a href=|http://samlib.ru|' | sed 's|.shtml>|.fb2.zip|' > /tmp/urls.txt`
+
+**Загружаем книги по списку:**  
+```
+mkdir /tmp/samlib_top_fb2 ; cd /tmp/samlib_top_fb2
+while read url;
+do
+name=`echo $url | sed 's|http://samlib.ru/[a-z]/||' | sed 's|/|-|'`
+echo "$name"
+wget -q -U 'Mozilla/5.0 (Windows NT 6.1; rv:38.0) Gecko/20100101 Firefox/38.0' $url -O $name                              
+done < /tmp/urls.txt
+```
+
+fb2 есть далеко не ко всем книгам, мусора тоже много, из 2000 книжек получается всего 1400 годных.
