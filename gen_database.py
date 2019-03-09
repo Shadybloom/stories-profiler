@@ -775,6 +775,8 @@ def consume_files(filelist, database_path, reject_duplicates=REJECT_DUPLICATES):
                 print('{0} / {1} {2:60} | {3:10,d} WORDS'.format(
                     n, len(filelist), file_path, words_consume))
     print("[OK] GET {0:,d} WORDS: {1}".format(words_count, database_path))
+    # Исправить
+    # text_cunt лучше объявить глобальной переменной. global text_cunt
     return texts_count
 
 #-------------------------------------------------------------------------

@@ -127,17 +127,22 @@ def clear_linkscloud(linkscloud, similarity_max=SIMILARITY_MAX, similarity_score
 
 def read_graph(search_string, database_path,
         recurion_lvl=RECURSION_LVL, sense=SIMILARITY_MAX, nodes_max=NODES_MAX, suppress_output=False):
-    """Читаем словари ссылок и формируем метасловарь.
+    """Рекурсивно читаем словари ссылок и создаём срез графа связей.
     
-    Ближайшие рассказы переносим в список ссылок, чтобы обработать рекурсивно.
+    В вывод попадают только связанные с поисковым запросом вершины графа.
+    Например, если у нас в запросе автор "В облаках пушистых лапки"
+    Тогда каждый текст в выдаче должен будет ссылаться на
+    "Янтарь в темноте", "Город на цепи" и "Soldiers of the Dark Ages"
+    Это главная фича, что позволяет отсеивать чужие работы.
+    И обнаруживать рассказы, написанные под псевдонимом.
     """
     graph_list = []
     database = sqlite3.connect(database_path)
     cursor = database.cursor()
     search_string = ' '.join(search_string)
-    # Первым в списке оказывается наш поисоквый запрос.
+    # Первым в списке оказывается наш поисковый запрос.
     search_list = [search_string]
-    # Рекурсивный обход графа, пока число собраных нод не достигнет предела:
+    # Рекурсивный обход графа, пока число собранных нод не достигнет предела:
     sql_list = get_graph(search_list, cursor)
     # Результаты поиска, выводятся только ноды, ссылающиеся на них:
     test_list = [el[0] for el in sql_list]
@@ -154,7 +159,7 @@ def read_graph(search_string, database_path,
                 linkscloud = clear_linkscloud(linkscloud_raw, sense)
                 # Извлекаем ссылки для следующих циклов поиска:
                 links_list = [key for key in linkscloud.keys()]
-                # Проверяем, ссылается ли нода на результаты первого поиска:
+                # Проверяем, ссылается ли нода на результаты первого запроса:
                 for link in links_list:
                     if link in test_list:
                         search_list.extend(links_list)
