@@ -185,4 +185,10 @@ cat ./data/samlib_top_fb2/* | egrep '^[  ]+[—-]+' | sed 's/[-—]\+/|||/' |  
 cat ./data/samlib_top_fb2/* | egrep '^[  ]+[—-]+' | sed 's/[-—]\+/|||/' |  sed 's/\([—-][^-—]\+\)[—-].*/\1/' |  egrep -o  '[  ]+[—-]+[  ]+[а-яА-Я,; ]+' | ./verb_extract.py | head -n 100
 ```
 
+**С понификшена:**  
+```
+cat ./data/ponyfiction_all_fb2/* | sed 's|><|>\n<|g' | egrep '<p>[^-—]*[—-]+' | sed 's/<p>[^-—]*[-—]\+/|||/' | sed 's/<\/p>//'  | sed 's/\([—-][^-—]\+\)[—-].*/\1/' | egrep -o '[  ]+[—-]+[  ]+[а-яА-Я,; -]+'
+
+```
+
 ![Пример](/images/dialogs-example.png)  
