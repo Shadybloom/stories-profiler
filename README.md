@@ -149,22 +149,40 @@ wget -q -U 'Mozilla/5.0 (Windows NT 6.1; rv:38.0) Gecko/20100101 Firefox/38.0' $
 done < /tmp/urls.txt
 ```
 
-40 книг из списка не перевариваются декодером. Кот знает, что с ними не так.
+40 книг из списка не перевариваются декодером. Кот знает, что с ними не так.  
 
 ## База данных самиздата
 
 **Список из 2000 книг, жанр фэнтези:**  
-`curl -A "Mozilla/5.0 (Windows NT 6.1; rv:52.0) Gecko/20100101 Firefox/52.0" "http://samlib.ru/janr/index_janr_hits24-[1-10].shtml" | egrep -o ': <a href=.*shtml>' | sed 's|: <a href=|http://samlib.ru|' | sed 's|.shtml>|.fb2.zip|' > /tmp/urls.txt`
+`curl -A "Mozilla/5.0 (Windows NT 6.1; rv:52.0) Gecko/20100101 Firefox/52.0" "http://samlib.ru/janr/index_janr_hits24-[1-10].shtml" | egrep -o ': <a href=.*shtml>' | sed 's|: <a href=|http://samlib.ru|' | sed 's|.shtml>|.shtml|' > /tmp/urls.txt`
 
 **Загружаем книги по списку:**  
 ```
-mkdir /tmp/samlib_top_fb2 ; cd /tmp/samlib_top_fb2
+mkdir ./samlib_top_fb2
 while read url;
 do
-name=`echo $url | sed 's|http://samlib.ru/[a-z]/||' | sed 's|/|-|'`
+name=`echo $url | sed 's|http://samlib.ru/[a-z]/||' | sed 's|/|-|' | sed 's|.shtml|.fb2|'`
 echo "$name"
-wget -q -U 'Mozilla/5.0 (Windows NT 6.1; rv:38.0) Gecko/20100101 Firefox/38.0' $url -O $name                              
+python samlib_downloader.py "$url" > ./samlib_top_fb2/$name
 done < /tmp/urls.txt
 ```
 
-fb2 есть далеко не ко всем книгам, мусора тоже много, из 2000 книжек получается всего 1400 годных.
+fb2 есть далеко не ко всем книгам, поэтому делаем скриптом.  
+Мусора тоже много, из 2000 книжек получается всего 1400 годных.  
+
+## Авторские слова в диалогах
+
+**Из топа флибусты:**  
+```
+cd ./data/flibusta_top_fb2/ ; unzip \*.zip
+cat ./data/flibusta_top_fb2/*.fb2 | egrep '<p>[—-]+' | sed 's/<p>[-—]\+/|||/' | sed 's/<\/p>//' | sed 's/\([—-][^-—]\+\)[—-].*/\1/' | egrep '[  ]+[—-]+[  ]+[а-яА-Я,; -]+'
+cat ./data/flibusta_top_fb2/*.fb2 | egrep '<p>[—-]+' | sed 's/<p>[-—]\+/|||/' | sed 's/<\/p>//' | sed 's/\([—-][^-—]\+\)[—-].*/\1/' | egrep '[  ]+[—-]+[  ]+[а-яА-Я,; -]+' | ./verb_extract.py | head -n 100
+```
+
+**Из топа самиздата:**  
+```
+cat ./data/samlib_top_fb2/* | egrep '^[  ]+[—-]+' | sed 's/[-—]\+/|||/' |  sed 's/\([—-][^-—]\+\)[—-].*/\1/' |  egrep -o  '[  ]+[—-]+[  ]+[а-яА-Я,; ]+'
+cat ./data/samlib_top_fb2/* | egrep '^[  ]+[—-]+' | sed 's/[-—]\+/|||/' |  sed 's/\([—-][^-—]\+\)[—-].*/\1/' |  egrep -o  '[  ]+[—-]+[  ]+[а-яА-Я,; ]+' | ./verb_extract.py | head -n 100
+```
+
+![Пример](/images/dialogs-example.png)  
