@@ -35,7 +35,7 @@ if __name__ == '__main__':
     parser = create_parser()
     namespace = parser.parse_args()
     # Проверяем, существует ли указанный файл:
-    file_patch = ' '.join(namespace.file)
+    file_patch = os.path.abspath(namespace.file[0])
     if namespace.file is not None and os.path.exists(file_patch):
         file = open(file_patch, "r")
         text = file.read()
