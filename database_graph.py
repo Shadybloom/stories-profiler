@@ -4,6 +4,7 @@
 # Скрипт создаёт граф связей между текстами в базе данных.
 
 import os
+import re
 import sqlite3
 import graphviz
 import argparse
@@ -108,8 +109,12 @@ def get_graph(search_list, cursor):
                     .format(s=search_string)
         # Группа поисковых запросов -- от машины
         else:
+            # Исправить
+                # Уязвимость. Запрос в sqlite от названия файла.
+                # Экранируем filename, но всё равно это ненадёжно.
             sql_query = "SELECT filename, book_title, author, wordcount, links\
-                    FROM stories WHERE filename='{s}'".format(s=search_string)
+                    FROM stories WHERE filename=\"{s}\"".format(s=search_string)
+            #print(sql_query)
         blob_list += cursor.execute(sql_query).fetchall()
         #print ('{0:4} {1:10}'.format(n, search_string))
     return blob_list
